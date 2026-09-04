@@ -125,3 +125,9 @@ all.config
 
 # fetched Android config fragments
 kernel/configs/android-*.cfg
+
+# --- local build artifacts (added for KernelSU-Next integration) ---
+*.dtbo
+/boot.img
+/__orig_boot.img
+/modules_out/

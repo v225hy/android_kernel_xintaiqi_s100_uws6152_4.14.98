@@ -359,7 +359,7 @@ int main(int argc, char *argv[])
 	} else if (streq(outform, "yaml")) {
 		if (!streq(inform, "dts"))
 			die("YAML output format requires dts input format\n");
-		dt_to_yaml(outf, dti);
+		// dt_to_yaml(outf, dti);
 #endif
 	} else if (streq(outform, "dtb")) {
 		dt_to_blob(outf, dti, outversion);

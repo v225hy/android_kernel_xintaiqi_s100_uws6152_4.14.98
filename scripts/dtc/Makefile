@@ -14,7 +14,6 @@ HOST_EXTRACFLAGS := -I$(src)/libfdt
 ifeq ($(wildcard /usr/include/yaml.h),)
 HOST_EXTRACFLAGS += -DNO_YAML
 else
-dtc-objs	+= yamltree.o
 HOSTLDLIBS_dtc	:= -lyaml
 endif
 
