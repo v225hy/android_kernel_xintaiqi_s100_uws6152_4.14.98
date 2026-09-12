@@ -36,6 +36,14 @@ struct chn_info_t {
 };
 
 static struct sprdwcn_bus_ops *wcn_bus_ops;
+/*
+ * Permanent pointer to the ops registered by the very first
+ * module_ops_register() call. Never cleared, so that prebuilt vendor
+ * modules using the inlined sprdwcn_bus_* helpers can never observe a
+ * NULL bus ops (which would make those helpers "succeed" silently and
+ * crash the caller). See module_ops_register() for details.
+ */
+static struct sprdwcn_bus_ops *wcn_bus_ops_permanent;
 
 static struct chn_info_t g_chn_info;
 static struct chn_info_t *chn_info(void)
@@ -300,22 +308,71 @@ struct mchn_ops_t *chn_ops(int channel)
 int module_ops_register(struct sprdwcn_bus_ops *ops)
 {
 	if (wcn_bus_ops) {
+		/*
+		 * Idempotent re-registration of the SAME table.
+		 *
+		 * sdiohal_if.c registers sdiohal_bus_ops from an early
+		 * subsys_initcall so that platform drivers probing before
+		 * marlin (notably the prebuilt sprdbt_tty.ko, whose
+		 * mtty_probe silently skips sprdwcn_bus_chn_init() when
+		 * get_wcn_bus_ops() is NULL) can already register their
+		 * channels. marlin_probe later calls this again through
+		 * wcn_bus_init(); that second call must neither warn nor
+		 * fail, or it would leave no bus ops at all.
+		 */
+		if (wcn_bus_ops == ops)
+			return 0;
+
 		WARN_ON_ONCE(1);
 		return -EBUSY;
 	}
 
 	wcn_bus_ops = ops;
+	/*
+	 * Keep a permanent copy of the first (and only) registered ops.
+	 * The vendor modules (sprdbt_tty.ko / sprdwl_ng.ko / sprd_fm.ko)
+	 * are prebuilt against <misc/wcn_bus.h> and inline the
+	 * sprdwcn_bus_* helpers. Those inline stubs return 0 ("pretend
+	 * success") without filling the head/tail output params when
+	 * get_wcn_bus_ops() returns NULL. Callers (e.g. sdio_data_transmit
+	 * in sprdbt_tty) then dereference the untouched NULL head pointer:
+	 *     head = NULL; ret = sprdwcn_bus_list_alloc(...);
+	 *     if (ret) goto err;   // ret==0 -> treated as success
+	 *     head->next = NULL;   // Oops: NULL pointer dereference
+	 * Never let get_wcn_bus_ops() go back to NULL, so the vendor code
+	 * always reaches the real bus ops and gets a proper error code.
+	 */
+	wcn_bus_ops_permanent = ops;
+
+	pr_info("%s: bus_ops %pK registered\n", __func__, ops);
 
 	return 0;
 }
 
 void module_ops_unregister(void)
 {
-	wcn_bus_ops = NULL;
+	/*
+	 * Deliberately do NOT clear wcn_bus_ops.
+	 *
+	 * See module_ops_register(): the prebuilt vendor modules inline the
+	 * sprdwcn_bus_* helpers, which silently return 0 when
+	 * get_wcn_bus_ops() is NULL and leave the head/tail output params
+	 * untouched. That turns an "unregistered bus" into a NULL pointer
+	 * the vendor driver (observed as sdio_data_transmit+0x10c Oops).
+	 *
+	 * The ops tables themselves (sdiohal_bus_ops) are static and stay
+	 * valid for the whole kernel lifetime, and their list_alloc
+	 * (buf_list_alloc) safely returns -1 when the channel pool is not
+	 * initialized, which the vendor code handles correctly.
+	 */
+	pr_info("%s: keep bus_ops %pK (not clearing)\n", __func__, wcn_bus_ops);
 }
 
 struct sprdwcn_bus_ops *get_wcn_bus_ops(void)
 {
+	if (!wcn_bus_ops)
+		return wcn_bus_ops_permanent;
+
 	return wcn_bus_ops;
 }
 EXPORT_SYMBOL_GPL(get_wcn_bus_ops);

@@ -182,10 +182,17 @@ union wcn_chn_config {
 #endif
 
 struct mchn_ops_t {
-	/* hardware interface type */
-	enum wcn_hard_intf_type hif_type;
+	/*
+	 * ABI NOTE: field order MUST match the layout the prebuilt vendor
+	 * modules (sprdbt_tty.ko / sprdwl_ng.ko / sprd_fm.ko) were compiled
+	 * against: channel first, then hif_type. Swapping them silently
+	 * corrupts every mchn_ops_t field the vendor code reads (observed:
+	 * bus_chn_init printed channel 0 / hif_type 22 and returned -1).
+	 */
 	/* channel index for wf/bt/fm */
 	int channel;
+	/* hardware interface type */
+	enum wcn_hard_intf_type hif_type;
 	/* channel config paras */
 #ifdef CONFIG_WCN_SIPC
 	union wcn_chn_config chn_config;
@@ -232,13 +239,25 @@ struct bus_puh_t {
 }; /* 32bits public header */
 
 struct sprdwcn_bus_ops {
+	/*
+	 * ABI WARNING: the order/layout of the members above the comment
+	 * "ABI-safe extension area" below MUST stay byte-for-byte
+	 * compatible with the header the prebuilt vendor modules
+	 * (sprdbt_tty.ko / sprdwl_ng.ko / sprd_fm.ko) were compiled
+	 * against. Those modules compute member offsets themselves and
+	 * inline the sprdwcn_bus_* helpers; inserting or reordering a
+	 * member shifts every following offset and makes the vendor code
+	 * call the wrong function pointer (observed: sdio_data_transmit
+	 * called get_bus_status() thinking it was list_alloc() and then
+	 * dereferenced the untouched NULL head -> kernel Oops).
+	 * New members may only be APPENDED, after all legacy members.
+	 */
 	int (*preinit)(void);
 	void (*deinit)(void);
 
 	int (*chn_init)(struct mchn_ops_t *ops);
 	int (*chn_deinit)(struct mchn_ops_t *ops);
 
-	enum wcn_hard_intf_type (*get_hwintf_type)(void);
 	int (*get_bus_status)(void);
 
 	/*
@@ -279,8 +298,6 @@ struct sprdwcn_bus_ops {
 	int (*read_l)(unsigned int system_addr, void *buf);
 	int (*update_bits)(unsigned int reg, unsigned int mask,
 			   unsigned int val);
-	int (*get_pm_policy)(void);
-	int (*set_pm_policy)(enum sub_sys subsys, enum wcn_bus_pm_state state);
 	unsigned int (*get_carddump_status)(void);
 	void (*set_carddump_status)(unsigned int flag);
 	unsigned long long (*get_rx_total_cnt)(void);
@@ -304,9 +321,13 @@ struct sprdwcn_bus_ops {
 	int (*driver_register)(void);
 	void (*driver_unregister)(void);
 
+	/* ===== ABI-safe extension area: append-only for new members ===== */
 	/* for wcn chip boot and download firmware */
 	int (*start_wcn)(enum wcn_sub_sys subsys);
 	int (*stop_wcn)(enum wcn_sub_sys subsys);
+	enum wcn_hard_intf_type (*get_hwintf_type)(void);
+	int (*get_pm_policy)(void);
+	int (*set_pm_policy)(enum sub_sys subsys, enum wcn_bus_pm_state state);
 };
 
 extern struct atomic_notifier_head wcn_reset_notifier_list;

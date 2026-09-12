@@ -159,3 +159,37 @@ void module_bus_deinit(void)
 	module_ops_unregister();
 }
 EXPORT_SYMBOL_GPL(module_bus_deinit);
+
+/*
+ * Register the SDIO HAL bus ops as early as possible.
+ *
+ * The prebuilt vendor modules register their data channels from their own
+ * platform probe. sprdbt_tty.ko's mtty_probe, for instance, does:
+ *
+ *     mov  x0, #0x30 / #0x80   ; &bt_sdio_rx_ops / &bt_sdio_tx_ops
+ *     bl   get_wcn_bus_ops
+ *     cbz  x0, <skip>          ; bus_ops == NULL -> silently skip!
+ *     ldr  x1, [x0,#16]        ; chn_init
+ *     blr  x1                  ; register channel 17 / 3
+ *
+ * mtty_probe can run BEFORE the marlin platform device probes (which is what
+ * calls wcn_bus_init() -> module_bus_init() -> module_ops_register()). When
+ * that happens the vendor code observes a NULL bus ops, skips channel
+ * registration, and BT channels 3 (TX) and 17 (RX) end up with uninitialized
+ * buffer pools. sprdwcn_bus_list_alloc() then fails with
+ * "buf_list_alloc err, num 1, free 0", HCI commands are never transmitted,
+ * and the BT stack aborts with hci_timeout_abort() in a tight loop that also
+ * drags down the whole system.
+ *
+ * sdiohal_bus_ops is a static, self-describing table; the only thing the
+ * early registration does is publish it, so every later probe gets a valid
+ * pointer. The module_bus_init() call from marlin_probe is then an
+ * idempotent no-op (see module_ops_register()).
+ */
+static int __init sdiohal_bus_ops_early_init(void)
+{
+	module_bus_init();
+
+	return 0;
+}
+subsys_initcall(sdiohal_bus_ops_early_init);
