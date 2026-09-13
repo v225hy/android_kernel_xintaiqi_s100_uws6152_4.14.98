@@ -50,6 +50,10 @@
 #define SPRD_PCM_CHANNEL_MAX 2
 #define VBC_AUDRCD_FULL_WATERMARK 160
 
+#define DEEPBUFFER_PLAYBACK_BUFFER_BYTES_MAX		(228 * 1024)
+#define NORMAL_PLAYBACK_BUFFER_BYTES_MAX		(64 * 1024)
+#define NORMAL_CAPTURE_BUFFER_BYTES_MAX		(64 * 1024)
+
 #undef sp_asoc_pr_info
 #define sp_asoc_pr_info pr_info
 
@@ -131,7 +135,8 @@ struct dma_chan_index_name {
 	SNDRV_PCM_INFO_INTERLEAVED | \
 	SNDRV_PCM_INFO_PAUSE | SNDRV_PCM_INFO_RESUME)
 #define SPRD_SNDRV_PCM_FMTBIT (SNDRV_PCM_FMTBIT_S16_LE | \
-			       SNDRV_PCM_FMTBIT_S24_LE)
+			       SNDRV_PCM_FMTBIT_S24_LE | \
+			       SNDRV_PCM_FMTBIT_S32_LE)
 
 static const struct snd_pcm_hardware sprd_pcm_hardware_v1 = {
 	.info = SPRD_SNDRV_PCM_INFO_COMMON |
@@ -139,16 +144,16 @@ static const struct snd_pcm_hardware sprd_pcm_hardware_v1 = {
 		SNDRV_PCM_INFO_NO_PERIOD_WAKEUP,
 	.formats = SPRD_SNDRV_PCM_FMTBIT,
 	/* 16bits, stereo-2-channels */
-	.period_bytes_min = 1,
+	.period_bytes_min = VBC_FIFO_FRAME_NUM * 4,
 	/* non limit */
 	/* test haps */
-	.period_bytes_max = 1024*1024*8,
+	.period_bytes_max = DEEPBUFFER_PLAYBACK_BUFFER_BYTES_MAX,
 	.periods_min = 1,
 	/* non limit */
 	/* test haps */
-	.periods_max = 100,
+	.periods_max = PAGE_SIZE / DMA_LINKLIST_CFG_NODE_SIZE,
 	/* test haps */
-	.buffer_bytes_max = 1024 * 1024 * 8,
+	.buffer_bytes_max = DEEPBUFFER_PLAYBACK_BUFFER_BYTES_MAX,
 };
 
 static const struct snd_pcm_hardware sprd_i2s_pcm_hardware = {
@@ -157,13 +162,15 @@ static const struct snd_pcm_hardware sprd_i2s_pcm_hardware = {
 	/* 16bits, stereo-2-channels */
 	.period_bytes_min = 8 * 2,
 	/* non limit */
-	.period_bytes_max = 32 * 2 * 100,
+	.period_bytes_max = I2S_BUFFER_BYTES_MAX / 2,
 	.periods_min = 1,
 	/* non limit */
 	.periods_max = PAGE_SIZE / DMA_LINKLIST_CFG_NODE_SIZE,
 	.buffer_bytes_max = I2S_BUFFER_BYTES_MAX,
 };
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 int agdsp_access_enable(void)
 	__attribute__ ((weak, alias("__agdsp_access_enable")));
 static int __agdsp_access_enable(void)
@@ -179,7 +186,7 @@ static int __agdsp_access_disable(void)
 	pr_debug("%s\n", __func__);
 	return 0;
 }
-
+#pragma GCC diagnostic pop
 
 static inline int sprd_is_i2s(struct snd_soc_dai *cpu_dai)
 {
@@ -261,6 +268,7 @@ static int is_no_pcm_dai(int fe_dai_id)
 	case FE_DAI_ID_FM:
 	case FE_DAI_ID_FM_DSP:
 	case FE_DAI_ID_CODEC_TEST:
+	case FE_DAI_ID_HFP:
 		ret = 1;
 		break;
 	default:
@@ -1129,6 +1137,7 @@ static int sprd_pcm_hw_params(struct snd_pcm_substream *substream,
 			rtd->dma_tx_des[i]->callback = sprd_pcm_dma_buf_done;
 			rtd->dma_tx_des[i]->callback_param =
 				(void *)(dma_pdata_ptr[i]);
+			rtd->dma_tx_des[i]->callback_result = NULL;
 		}
 	}
 	normal_dma_protect_mutex_unlock(substream);
@@ -1439,8 +1448,6 @@ static int sprd_pcm_preallocate_dma_ddr32_buffer(struct snd_pcm *pcm,
 	return 0;
 }
 
-static u64 sprd_pcm_dmamask = DMA_BIT_MASK(64);
-
 static int sprd_pcm_new(struct snd_soc_pcm_runtime *rtd)
 {
 	struct snd_card *card = rtd->card->snd_card;
@@ -1450,7 +1457,7 @@ static int sprd_pcm_new(struct snd_soc_pcm_runtime *rtd)
 	sp_asoc_pr_dbg("%s %s\n", __func__, sprd_dai_pcm_name(cpu_dai));
 
 	if (!card->dev->dma_mask)
-		card->dev->dma_mask = &sprd_pcm_dmamask;
+		dma_set_mask(card->dev, DMA_BIT_MASK(64));
 #ifdef CONFIG_ARM64
 	card->dev->coherent_dma_mask = DMA_BIT_MASK(64);
 #else
@@ -1659,7 +1666,7 @@ static int sprd_soc_platform_probe(struct platform_device *pdev)
 static int sprd_soc_platform_remove(struct platform_device *pdev)
 {
 	snd_soc_unregister_platform(&pdev->dev);
-
+	unregister_pm_notifier(&pm_dma->pm_nb);
 	return 0;
 }
 

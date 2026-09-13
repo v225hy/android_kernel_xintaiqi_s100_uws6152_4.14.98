@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Spreadtrum Communications Inc.
+ * Copyright (C) 2015 Spreadtrum Communications Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -11,20 +11,19 @@
  * GNU General Public License for more details.
  */
 
-#ifndef __SPRD_AUDIO_SHARKL3_H
-#define __SPRD_AUDIO_SHARKL3_H
+#ifndef __SPRD_AUDIO_SHARKLE_H
+#define __SPRD_AUDIO_SHARKLE_H
+
+#include <linux/io.h>
 
 #ifndef __SPRD_AUDIO_H
 #error  "Don't include this file directly, include sprd-audio.h"
 #endif
 
-#include <linux/io.h>
-
-
-#define CODEC_DP_BASE		0x1000
-#define VBC_BASE		0x1000
-#define CODEC_AP_BASE		0x2000
-#define CODEC_AP_OFFSET		0
+#define CODEC_DP_BASE		(0x1000)
+#define VBC_BASE		(0x1000)
+#define CODEC_AP_BASE		(0x2000)
+#define CODEC_AP_OFFSET		(0)
 
 #define CODEC_DP_BASE_DEFAULT		0x40000000
 #define CODEC_DP_SIZE_DEFAULT		SZ_8K
@@ -68,6 +67,7 @@ enum {
 	ADU_DIGITAL_INT_TO_PUBCP_CTRL,
 	ADU_DIGITAL_INT_TO_WTLCP_CTRL,
 };
+
 /* note: I2S_MAGIC_ID: in i2s driver
  * VBC_DAI_NORMAL: play & fm capture
  * VBC_DAI_AD23: normal capture
@@ -79,11 +79,6 @@ enum {
 	VBC_DAI_DEEP_BUF = 2,
 	VBC_DAI_MAX
 };
-
-/* for CP2 */
-#define VBC_CP2_PHY_BASE	(0x02020000)
-#define CP2_PHYS_VBDA0		(VBC_CP2_PHY_BASE + 0x0000)
-#define CP2_PHYS_VBDA1		(VBC_CP2_PHY_BASE + 0x0004)
 
 #define CLASS_G_LDO_ID			"vddclsg"
 
@@ -99,10 +94,10 @@ enum {
 #define DMA_REQ_ARM7_VBC_AD2            (4 + 1)
 #define DMA_REQ_ARM7_VBC_AD3            (5 + 1)
 
-#define DMA_REQ_ARM7_VBC_DA0            (6 + 1)
-#define DMA_REQ_ARM7_VBC_DA1            (7 + 1)
-#define DMA_REQ_ARM7_VBC_DA2            (8 + 1)
-#define DMA_REQ_ARM7_VBC_DA3            (9 + 1)
+#define DMA_REQ_ARM7_VBC_DA0            (4 + 1)
+#define DMA_REQ_ARM7_VBC_DA1            (5 + 1)
+#define DMA_REQ_ARM7_VBC_DA2            (6 + 1)
+#define DMA_REQ_ARM7_VBC_DA3            (7 + 1)
 
 /* AP vbc and iis dma device id*/
 #define DMA_REQ_IIS0_RX                 (2 + 1)
@@ -130,30 +125,22 @@ enum {
 /* REG_AON_APB_VBC_CTRL */
 #define REG_AON_APB_VBC_CTRL                    (0x0020)
 
-
 /*AP_APB registers offset */
 #define REG_AP_APB_APB_EB                   (0x0000)
 #define REG_AP_APB_APB_RST                  (0x0004)
-
-
 
 /*PMU APB register offset*/
 #define REG_PMU_APB_XTLBUF1_REL_CFG                           (0x0090)
 #define REG_PMU_APB_SLEEP_XTLON_CTRL                          (0x0168)
 #define REG_PMU_APB_LIGHT_SLEEP_ENABLE                        (0x0230)
 
-
-
 /* REG_AON_APB_APB_EB0 */
 #define BIT_AON_APB_VBC_EB                            BIT(19)
 #define BIT_AON_APB_AUD_EB                            BIT(18)
 #define BIT_AON_APB_AUDIF_EB                          BIT(17)
 
-
-
 /* REG_PMU_APB_LIGHT_SLEEP_ENABLE */
 #define BIT_PMU_APB_DMA_CHNALL_LSLP_ENA                         BIT(16)
-
 
 /* REG_AON_APB_APB_RST0 */
 #define BIT_AON_APB_VBC_SOFT_RST                      BIT(20)
@@ -161,11 +148,9 @@ enum {
 /* REG_AON_APB_SINDRV_CTRL */
 #define BIT_AON_APB_SINDRV_ENA                        BIT(0)
 
-
 /* REG_AON_APB_APB_RST0 */
 #define BIT_AON_APB_AUD_SOFT_RST                      BIT(19)
 #define BIT_AON_APB_AUDIF_SOFT_RST                    BIT(18)
-
 
 /* REG_AP_APB_APB_EB */
 #define BIT_AP_APB_IIS0_EB                      BIT(1)
@@ -177,11 +162,8 @@ enum {
 #define BIT_PMU_APB_XTLBUF1_WTLCP_SEL                           BIT(1)
 #define BIT_PMU_APB_XTLBUF1_AP_SEL                              BIT(0)
 
-
 /* REG_PMU_APB_SLEEP_XTLON_CTRL */
 #define BIT_PMU_APB_AP_SLEEP_XTL_ON                             BIT(0)
-
-
 
 /* REG_AON_APB_VBC_CTRL */
 #define BIT_AON_APB_AUDIF_CKG_AUTO_EN                 BIT(20)
@@ -194,12 +176,11 @@ enum {
 #define BIT_AON_APB_VBC_DA23_DMA_SYS_SEL(x)           (((x) & 0x3) << 2)
 #define BIT_AON_APB_VBC_DMA_WTLCP_ARM_SEL             BIT(1)
 
+#define REG_ANLG_PHY_G6_ANALOG_BB_TOP_ANA_BB_SINE_CTRL      (0x0008)
+#define REG_ANLG_PHY_G6_ANALOG_BB_TOP_ANA_BB_SINE_CTRL      (0x0008)
 
-
-
-
-
-
+/* REG_ANLG_PHY_G6_ANALOG_BB_TOP_ANA_BB_SINE_CTRL */
+#define BIT_ANLG_PHY_G6_ANALOG_BB_TOP_SINDRV_ENA                      BIT(10)
 
 static inline int _arch_audio_vbc_reset(void)
 {
@@ -234,7 +215,8 @@ static inline void _xtlbuf1_eb_set(void)
 		if (ret == 0) {
 			ret = pmu_apb_reg_read(
 				REG_PMU_APB_XTLBUF1_REL_CFG, &val);
-			if (ret == 0 && val & BIT_PMU_APB_XTLBUF1_WTLCP_SEL) {
+			if (ret == 0 &&
+				val & BIT_PMU_APB_XTLBUF1_WTLCP_SEL) {
 				pr_debug("xtlbuf1 eb wtlcp success\n");
 				break;
 			}
@@ -260,7 +242,7 @@ static inline void _xtlbuf1_eb_set(void)
 			pr_warn("%s line[%d] ret=%d, val=%#x reg read failed\n",
 				__func__, __LINE__, ret, val);
 		} else
-			pr_err("%s line[%d] pmu_reg_set to wtlcp failed\n",
+			pr_err("%s line[%d] pmu_reg_set to ap failed\n",
 				__func__, __LINE__);
 	}
 	/* wait for xbuf stable */
@@ -271,17 +253,23 @@ static inline void _xtlbuf1_eb_set(void)
 		val = readl_relaxed(g_clk_status_addr);
 		pr_debug("%s %d protect_cnt=%d, val=%#x\n",
 			__func__, __LINE__, protect_cnt, val);
-		if (val & BIT(14)) {
-			pr_debug("xbuf stable protect_cnt=%d success\n",
+		if (val & BIT(11)) {
+			pr_info("xbuf stable protect_cnt=%d success\n",
 				 protect_cnt);
 			protect_cnt = 0;
 			break;
 		}
+		/*
+		 * Waiting for xtlbuf stable without timeout according to
+		 * the recommendation of ascic(zhongping.jiang) ,
+		 * because xtlbuf failed is fatal, we can not ignore it.
+		 */
 		if (protect_cnt > WAIT_XTLBUF_STABLE_MAX_COUNT) {
-			pr_err("protect_cnt %d too many time break\n",
-			      protect_cnt);
+			pmu_apb_reg_read(REG_PMU_APB_XTLBUF1_REL_CFG, &val);
+			pr_err("failed protect_cnt %d too many time, val_pmu_apb_xtlbuf1_rel_cfg=%#x\n",
+			      protect_cnt, val);
 			protect_cnt = 0;
-			break;
+			msleep(500);
 		}
 	}
 	pr_debug("%s %d setted\n", __func__, __LINE__);
@@ -522,8 +510,8 @@ static inline int arch_audio_codec_digital_enable(void)
 		return ret;
 	}
 	/* internal digital 26M enable */
-	ret = anlg_phy_g_reg_set(REG_AON_APB_SINDRV_CTRL,
-			BIT_AON_APB_SINDRV_ENA);
+	ret = anlg_phy_g_reg_set(REG_ANLG_PHY_G6_ANALOG_BB_TOP_ANA_BB_SINE_CTRL,
+		BIT_ANLG_PHY_G6_ANALOG_BB_TOP_SINDRV_ENA);
 	if (ret != 0)
 		pr_err("%s set failed", __func__);
 
@@ -540,8 +528,8 @@ static inline int arch_audio_codec_digital_disable(void)
 		return ret;
 	}
 	/* internal digital 26M disable */
-	ret = anlg_phy_g_reg_clr(REG_AON_APB_SINDRV_CTRL,
-			BIT_AON_APB_SINDRV_ENA);
+	ret = anlg_phy_g_reg_clr(REG_ANLG_PHY_G6_ANALOG_BB_TOP_ANA_BB_SINE_CTRL,
+		BIT_ANLG_PHY_G6_ANALOG_BB_TOP_SINDRV_ENA);
 	if (ret != 0)
 		pr_err("%s set failed", __func__);
 
@@ -775,4 +763,5 @@ static inline int arch_dma_chanall_lslp_ena(bool enable)
 
 	return 0;
 }
-#endif /* __SPRD_AUDIO_SHARKL3_H */
+
+#endif /* __SPRD_AUDIO_SHARKLE_H */

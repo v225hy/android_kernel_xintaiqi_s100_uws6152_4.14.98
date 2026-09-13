@@ -21,15 +21,12 @@
 
 #include "sprd-asoc-card-utils.h"
 #include "sprd-asoc-common.h"
-#include "ucp1301.h"
 
 struct sprd_asoc_ext_hook_map {
 	const char *name;
 	sprd_asoc_hook_func hook;
 	int en_level;
 };
-
-#define SPK_CNT_MAX 3
 
 enum {
 	/* ext_ctrl_type */
@@ -44,33 +41,51 @@ enum {
 };
 
 struct sprd_asoc_hook_spk_priv {
-	int gpio[SPK_CNT_MAX];
-	int priv_data[SPK_CNT_MAX];
+	int gpio[BOARD_FUNC_MAX];
+	int priv_data[BOARD_FUNC_MAX];
 	spinlock_t lock;
 };
 
-static struct sprd_asoc_hook_spk_priv hook_spk_priv = {
-	.gpio = {-1, -1, -1},
-};
-
-enum {
-	MODE_1 = 0,
-	MODE_2,
-	MODE_3,
-	MODE_4,
-	MODE_5,
-	MODE_6,
-	MODE_7,
-	MODE_8,
-	MODE_9,
-	MODE_10,
-	MODE_MAX
-};
+static struct sprd_asoc_hook_spk_priv hook_spk_priv;
+/*
+static int enable_gpio = 0;
+static int hp_on = 0, spk_on = 0, enable_io_state = -1;
+*/
+#define GENERAL_SPK_MODE 10
 
 #define EN_LEVEL 1
+/*
+static char boardtype[20];
+
+static char* boardid_get(void)
+{
+	char *p, *q;
+	char* s1="not found";
+
+	p = strstr(saved_command_line, "board_id=");
+	if(!p) {
+		printk("hardware_id not found in cmdline\n");
+		return s1;
+	}
+
+	if ((p - saved_command_line) > strlen(saved_command_line + 1))
+		return s1;
+	p += strlen("board_id=");
+	q = p;
+	while (*q != ' ' && *q != '\0')
+		q++;
+
+	memset(boardtype, 0, sizeof(boardtype));
+	strncpy(boardtype, p, (int)(q - p));
+	boardtype[q - p + 1]='\0';
+	s1 = boardtype;
+	pr_info("hardware_id found in cmdline : %s s1 =%s\n", boardtype,s1);
+
+	return s1;
+}
+*/
 
 static int select_mode;
-static bool exist_ucp_smart_pa;
 
 static ssize_t select_mode_show(struct kobject *kobj,
 				struct kobj_attribute *attr, char *buff)
@@ -142,18 +157,9 @@ static void hook_gpio_pulse_control(unsigned int gpio, unsigned int mode)
 	spin_unlock_irqrestore(lock, flags);
 }
 
-static int hook_spk_aw87xx(int id, int on)
+static int hook_general_spk(int id, int on)
 {
 	int gpio, mode;
-
-	if (exist_ucp_smart_pa) {
-		if (on)
-			ucp1301_audio_on(true);
-		else
-			ucp1301_audio_on(false);
-
-		return HOOK_OK;
-	}
 
 	gpio = hook_spk_priv.gpio[id];
 	if (gpio < 0) {
@@ -161,10 +167,28 @@ static int hook_spk_aw87xx(int id, int on)
 		return -EINVAL;
 	}
 	mode = hook_spk_priv.priv_data[id];
-
+	if (mode > GENERAL_SPK_MODE)
+		mode = 0;
 	pr_info("%s id: %d, gpio: %d, mode: %d, on: %d\n",
 		 __func__, id, gpio, mode, on);
-
+    /*
+    if(strncmp(boardtype,"S19610AA1",sizeof("S19610AA1"))==0||
+       strncmp(boardtype,"S19610GA1",sizeof("S19610GA1"))==0){
+	if (0 == id)
+		spk_on = on;
+	else if (3 == id)
+		hp_on = on;
+	if (enable_io_state != (spk_on | hp_on)) {
+		enable_io_state = (spk_on | hp_on);
+		gpio_set_value(enable_gpio, enable_io_state);
+		pr_info("%s enable_io_state %d\n", __func__, enable_io_state);
+		msleep(1);
+	}
+}
+else{
+    pr_info("%s Board: Don't has switch\n", boardtype);
+}
+*/
 	/* Off */
 	if (!on) {
 		gpio_set_value(gpio, !EN_LEVEL);
@@ -184,72 +208,31 @@ static int hook_spk_aw87xx(int id, int on)
 	 * is ready.
 	 */
 	msleep(22);
-
 	return HOOK_OK;
 }
 
-static int hook_rcv_switch_ctrl(int id, int on)
-{
-	int gpio = 0;
-
-	gpio = hook_spk_priv.gpio[id];
-	if (gpio < 0) {
-		pr_err("%s gpio is invalid!\n", __func__);
-		return -EINVAL;
-	}
-
-	pr_info("%s id: %d, gpio: %d, on: %d\n",
-		 __func__, id, gpio, on);
-
-	if (on)
-		gpio_set_value(gpio, EN_LEVEL);
-	else
-		gpio_set_value(gpio, !EN_LEVEL);
-
-	return HOOK_OK;
-}
-
-static struct sprd_asoc_ext_hook_map speaker_hook[] = {
-	{"aw87xx", hook_spk_aw87xx, EN_LEVEL},
-	{0},
-	{"rcv_switch", hook_rcv_switch_ctrl, EN_LEVEL},
+static struct sprd_asoc_ext_hook_map ext_hook_arr[] = {
+	{"general_speaker", hook_general_spk, EN_LEVEL},
 };
 
-static struct gpio_map {
-	int type;
-	const char *name;
-} gpio_map[] = {
-	{BOARD_FUNC_SPK, "ext_spk_r"},
-	{BOARD_FUNC_SPK1, "ext_spk_l"},
-	{BOARD_FUNC_EAR, "rcv_ctrl"},
-	{0, NULL},
-};
-
-static int sprd_asoc_card_parse_hook_spk(struct device *dev,
+static int sprd_asoc_card_parse_hook(struct device *dev,
 					 struct sprd_asoc_ext_hook *ext_hook)
 {
 	struct device_node *np = dev->of_node;
 	const char *prop_pa_info = "sprd,spk-ext-pa-info";
 	const char *prop_pa_gpio = "sprd,spk-ext-pa-gpio";
-	int spk_cnt, elem_cnt, i, index;
+	//const char *prop_enable_gpio = "sprd,spk-hp-enable-gpio";
+	int spk_cnt, elem_cnt, i;
 	int ret = 0;
 	unsigned long gpio_flag;
 	unsigned int ext_ctrl_type, share_gpio, hook_sel, priv_data;
 	u32 *buf;
 
-	if (device_property_read_bool(dev, "sprd,ucp-smart-pa")) {
-		pr_info("exist ucp1301 smart pa\n");
-		ext_hook->ext_ctrl[EXT_CTRL_SPK] =
-			 speaker_hook[EXT_CTRL_SPK].hook;
-		exist_ucp_smart_pa = true;
-		return 0;
-	}
-
 	elem_cnt = of_property_count_u32_elems(np, prop_pa_info);
 	if (elem_cnt <= 0) {
 		dev_info(dev,
 			"Count '%s' failed!(%d)\n", prop_pa_info, elem_cnt);
-		return 0;
+		return -EINVAL;
 	}
 
 	if (elem_cnt % CELL_NUMBER) {
@@ -259,10 +242,10 @@ static int sprd_asoc_card_parse_hook_spk(struct device *dev,
 	}
 
 	spk_cnt = elem_cnt / CELL_NUMBER;
-	if (spk_cnt > SPK_CNT_MAX) {
+	if (spk_cnt > BOARD_FUNC_MAX) {
 		dev_warn(dev, "Speaker count %d is greater than %d!\n",
-			 spk_cnt, SPK_CNT_MAX);
-		spk_cnt = SPK_CNT_MAX;
+			 spk_cnt, BOARD_FUNC_MAX);
+		spk_cnt = BOARD_FUNC_MAX;
 	}
 
 	spin_lock_init(&hook_spk_priv.lock);
@@ -277,14 +260,12 @@ static int sprd_asoc_card_parse_hook_spk(struct device *dev,
 		//return ret;
 	}
 
-	for (i = 0; gpio_map[i].name && i < spk_cnt; i++) {
-		const char *name = gpio_map[i].name;
-		int type = gpio_map[i].type;
+	for (i = 0; i < spk_cnt; i++) {
 		int num = i * CELL_NUMBER;
 
 		/* Get the ctrl type */
 		ext_ctrl_type = buf[CELL_CTRL_TYPE + num];
-		if (ext_ctrl_type >= EXT_CTRL_MAX) {
+		if (ext_ctrl_type >= BOARD_FUNC_MAX) {
 			dev_err(dev, "Ext ctrl type %d is invalid!\n",
 				ext_ctrl_type);
 			return -EINVAL;
@@ -292,21 +273,16 @@ static int sprd_asoc_card_parse_hook_spk(struct device *dev,
 
 		/* Get the selection of hook function */
 		hook_sel = buf[CELL_HOOK + num];
-		if (hook_sel >= ARRAY_SIZE(speaker_hook)) {
+		if (hook_sel >= ARRAY_SIZE(ext_hook_arr)) {
 			dev_err(dev,
 				"Hook selection %d is invalid!\n", hook_sel);
 			return -EINVAL;
 		}
-		ext_hook->ext_ctrl[ext_ctrl_type] = speaker_hook[hook_sel].hook;
+		ext_hook->ext_ctrl[ext_ctrl_type] = ext_hook_arr[hook_sel].hook;
 
-		/* Get the private data(normally for pa mode selection) */
+		/* Get the private data */
 		priv_data = buf[CELL_PRIV + num];
-		if (priv_data > MODE_MAX) {
-			dev_err(dev,
-				"mode selection %d is invalid!\n", priv_data);
-			return -EINVAL;
-		}
-		hook_spk_priv.priv_data[type] = priv_data;
+		hook_spk_priv.priv_data[ext_ctrl_type] = priv_data;
 
 		/* Process the shared gpio */
 		share_gpio = buf[CELL_SHARE_GPIO + num];
@@ -317,51 +293,64 @@ static int sprd_asoc_card_parse_hook_spk(struct device *dev,
 				ext_hook->ext_ctrl[ext_ctrl_type] = NULL;
 				return -EINVAL;
 			}
-			hook_spk_priv.gpio[type] =
+			hook_spk_priv.gpio[ext_ctrl_type] =
 				hook_spk_priv.gpio[share_gpio - 1];
 			continue;
 		}
 
-		/* Get the gpio */
-		index = of_property_match_string(np, "sprd,spk-ext-pa-names",
-						 name);
-		if (index < 0) {
-			pr_err("%s :no match found for '%s' gpio\n",
-			       __func__, name);
-			ext_hook->ext_ctrl[ext_ctrl_type] = NULL;
-			continue;
-		}
-
-		ret = of_get_named_gpio_flags(np, prop_pa_gpio, index, NULL);
+		ret = of_get_named_gpio_flags(np, prop_pa_gpio, i, NULL);
 		if (ret < 0) {
 			dev_err(dev, "Get gpio failed:%d!\n", ret);
 			ext_hook->ext_ctrl[ext_ctrl_type] = NULL;
 			return ret;
 		}
-		hook_spk_priv.gpio[type] = ret;
+		hook_spk_priv.gpio[ext_ctrl_type] = ret;
 
 		pr_info("ext_ctrl_type %d hook_sel %d priv_data %d gpio %d",
 			ext_ctrl_type, hook_sel, priv_data, ret);
 
 		gpio_flag = GPIOF_DIR_OUT;
-		gpio_flag |= speaker_hook[hook_sel].en_level ?
+		gpio_flag |= ext_hook_arr[hook_sel].en_level ?
 			GPIOF_INIT_HIGH : GPIOF_INIT_LOW;
-		ret = gpio_request_one(hook_spk_priv.gpio[type], gpio_flag,
-				       name);
+		ret = gpio_request_one(hook_spk_priv.gpio[ext_ctrl_type],
+				       gpio_flag, NULL);
 		if (ret < 0) {
-			dev_err(dev, "Gpio request failed:%d!\n", ret);
+			dev_err(dev, "Gpio request[%d] failed:%d!\n",
+				ext_ctrl_type, ret);
 			ext_hook->ext_ctrl[ext_ctrl_type] = NULL;
 			return ret;
 		}
 	}
-
+/*   //don'use audio switch since EVT1
+     if(strncmp(boardid_get(),"S19610GA1",sizeof("S19610GA1"))==0||
+        strncmp(boardid_get(),"S19610AA1",sizeof("S19610AA1"))==0){
+        ret = of_get_named_gpio_flags(np, prop_enable_gpio, 0, NULL);
+        if (ret < 0) { 
+			dev_err(dev, "Get gpio failed:%d!\n", ret);
+			enable_gpio = -1;
+        }
+        enable_gpio = ret;
+        pr_info("ext_ctrl_type spk-hp-enable-gpio gpio %d", ret);
+        gpio_flag = GPIOF_DIR_OUT;
+        gpio_flag |= GPIOF_INIT_HIGH;
+        ret = gpio_request_one(enable_gpio, gpio_flag, NULL);
+        if (ret < 0) {
+			dev_err(dev, "Gpio request[%d] failed:%d!\n",ext_ctrl_type, ret);
+			enable_gpio = -1;
+        }
+    }
+     else{
+        pr_info("Board %s don't has switch",boardtype);
+     }
+*/
 	return 0;
 }
+
 int sprd_asoc_card_parse_ext_hook(struct device *dev,
 				  struct sprd_asoc_ext_hook *ext_hook)
 {
 	ext_debug_sysfs_init();
-	return sprd_asoc_card_parse_hook_spk(dev, ext_hook);
+	return sprd_asoc_card_parse_hook(dev, ext_hook);
 }
 
 MODULE_ALIAS("platform:asoc-sprd-card");

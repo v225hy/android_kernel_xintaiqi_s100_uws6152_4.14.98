@@ -439,7 +439,7 @@ int ap_vbc_fifo_enable(int fifo_id, int chan, int enable)
 		val = bit;
 	else
 		val = ~bit;
-	ap_vbc_reg_update(reg, bit, mask);
+	ap_vbc_reg_update(reg, val, mask);
 	pr_info("%s fifo_id=%s, vbc_chan =%s, enable=%d\n",
 		__func__, ap_vbc_fifo_id2name(fifo_id),
 		ap_vbc_chan_id2name(chan), enable);
@@ -584,7 +584,7 @@ void ap_vbc_aud_dma_chn_en(int fifo_id, int vbc_chan, int enable)
 		val = bit;
 	else
 		val = ~bit;
-	ap_vbc_reg_update(reg, bit, mask);
+	ap_vbc_reg_update(reg, val, mask);
 	pr_info("%s fifo_id=%s, vbc_chan =%s, enable=%d\n",
 		__func__, ap_vbc_fifo_id2name(fifo_id),
 		ap_vbc_chan_id2name(vbc_chan), enable);
@@ -1279,6 +1279,20 @@ int dsp_vbc_iis_master_start(u32 enable)
 	return 0;
 }
 
+void dsp_vbc_iis_master_width_set(u32 iis_width)
+{
+	int ret;
+	u32 iis_mst_width = iis_width;
+
+	ret = aud_send_cmd(AMSG_CH_VBC_CTL,
+			   SND_KCTL_TYPE_VBC_IIS_MASTER_WIDTH_SET,
+			   -1, SND_VBC_DSP_IO_KCTL_SET,
+			   &iis_mst_width, sizeof(iis_mst_width),
+			   AUDIO_SIPC_WAIT_FOREVER);
+	if (ret < 0)
+		pr_warn("Failed to set iis_mst_width, ret %d\n", ret);
+}
+
 /* SND_KCTL_TYPE_MAIN_MIC_PATH_FROM */
 int dsp_vbc_mainmic_path_set(int type, int val)
 {
@@ -1316,6 +1330,27 @@ int dsp_ivsence_func(int enable, int iv_adc_id)
 	return 0;
 }
 
+int dsp_vbc_voice_pcm_play_set(bool enable, int mode)
+{
+    int ret;
+    struct vbc_voice_pcm_play_t play_mode;
+
+    sp_asoc_pr_dbg("%s enable =%d, mode = %d\n",
+        __func__, enable, mode);
+    play_mode.mix_pcm_enable = enable;
+    play_mode.mix_pcm_mode = mode;
+
+    /* 替换为 aud_send_cmd */
+    ret = aud_send_cmd(AMSG_CH_VBC_CTL,
+        SND_KCTL_TYPE_VOICE_MIX_UL, -1, SND_VBC_DSP_IO_KCTL_SET,
+        &play_mode, sizeof(struct vbc_voice_pcm_play_t),
+        AUDIO_SIPC_WAIT_FOREVER);
+
+    if (ret < 0)
+        pr_err("%s, Failed to set, ret: %d\n", __func__, ret);
+
+    return 0;
+}
 /*********************************************************
  * cmd for SND_VBC_DSP_FUNC_STARTUP
  *********************************************************/

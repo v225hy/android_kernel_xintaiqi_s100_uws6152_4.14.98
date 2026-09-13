@@ -2,7 +2,7 @@
  *  sprd-compr.c - ASoC Spreadtrum Compress Platform driver
  *
  *  Copyright (C) 2010-2020 Spreadtrum Communications Inc.
- *  Author: yintang.ren
+ *  Author:
  *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -258,6 +258,8 @@ static void *compr_cb_data;
 static struct mutex g_lock;
 #endif
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 int agdsp_access_enable(void)
 	__attribute__ ((weak, alias("__agdsp_access_enable")));
 static int __agdsp_access_enable(void)
@@ -273,7 +275,7 @@ static int __agdsp_access_disable(void)
 	pr_debug("%s\n", __func__);
 	return 0;
 }
-
+#pragma GCC diagnostic pop
 
 static void sprd_compr_drain_work(struct work_struct *work)
 {
@@ -388,7 +390,6 @@ exit:
 	return 0;
 }
 #endif
-/* yintang: to be confirmed */
 int sprd_compr_configure_dsp(struct sprd_compr_rtd *srtd)
 {
 	return 0;
@@ -1910,8 +1911,6 @@ static int sprd_platform_compr_get_codec_caps(struct snd_compr_stream *cstream,
 {
 	ADEBUG();
 
-	/* yintang:how to get codec caps, to be confirmed */
-
 	switch (codec->codec) {
 	case SND_AUDIOCODEC_MP3:
 		codec->num_descriptors = 2;
@@ -1949,12 +1948,16 @@ static int sprd_platform_compr_get_codec_caps(struct snd_compr_stream *cstream,
 static int sprd_platform_compr_set_metadata(struct snd_compr_stream *cstream,
 					struct snd_compr_metadata *metadata)
 {
-	struct snd_compr_runtime *runtime = cstream->runtime;
-	struct sprd_compr_rtd *srtd = runtime->private_data;
+	struct sprd_compr_rtd *srtd;
 
 	ADEBUG();
 
-	if (!metadata || !cstream)
+	if (!metadata || !cstream || !cstream->runtime)
+		return -EINVAL;
+
+	srtd = cstream->runtime->private_data;
+
+	if (!srtd)
 		return -EINVAL;
 
 	ADEBUG();

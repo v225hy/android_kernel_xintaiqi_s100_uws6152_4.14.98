@@ -64,6 +64,17 @@ static const char * const enable_disable_txt[] = {
 	"disable", "enable",
 };
 
+static const char * const dsp_voice_capture_type_txt[] = {
+	/* type 0, type 1, type 2 */
+	"VOICE_CAPTURE_DOWNLINK", "VOICE_CAPTURE_UPLINK",
+	"VOICE_CAPTURE_UPLINK_DOWNLINK",
+};
+
+static const char * const dsp_voice_pcm_play_mode_txt[] = {
+	/* type 0, type 1 */
+	"VOICE_PCM_PLAY_UPLINK_MIX", "VOICE_PCM_PLAY_UPLINK_ONLY",
+};
+
 static const struct soc_enum dsp_loopback_enum  =
 SPRD_VBC_ENUM(SND_SOC_NOPM, 3, dsp_loopback_type_txt);
 
@@ -76,6 +87,12 @@ static const struct soc_enum vbc_ag_iis_ext_sel_enum[AG_IIS_MAX] = {
 
 static const struct soc_enum vbc_dump_enum =
 SPRD_VBC_ENUM(SND_SOC_NOPM, 2, enable_disable_txt);
+
+static const struct soc_enum dsp_voice_capture_enum  =
+SPRD_VBC_ENUM(SND_SOC_NOPM, 3, dsp_voice_capture_type_txt);
+
+static const struct soc_enum dsp_voice_pcm_play_enum  =
+SPRD_VBC_ENUM(SND_SOC_NOPM, 2, dsp_voice_pcm_play_mode_txt);
 
 static const char * const sprd_profile_name[] = {
 	"audio_structure", "dsp_vbc", "cvs", "dsp_smartamp",
@@ -761,6 +778,56 @@ vbc_mux_adc_enum[VBC_MUX_IN_ADC_ID_MAX] = {
 	[VBC_MUX_IN_ADC3] = SPRD_VBC_ENUM(VBC_MUX_IN_ADC3,
 					  ADC_IN_MAX, mux_adc_sel_txt),
 };
+
+/* convert enum VBC_DMIC_SEL_E to string */
+static const char * const vbc_dmic_sel_txt[VBC_DMIC_MAX] = {
+	[VBC_DMIC_NONE] = TO_STRING(VBC_DMIC_NONE),
+	[VBC_DMIC_0L] = TO_STRING(VBC_DMIC_0L),
+	[VBC_DMIC_0R] = TO_STRING(VBC_DMIC_0R),
+	[VBC_DMIC_0L_0R] = TO_STRING(VBC_DMIC_0L_0R),
+	[VBC_DMIC_1L] = TO_STRING(VBC_DMIC_1L),
+	[VBC_DMIC_0L_1L] = TO_STRING(VBC_DMIC_0L_1L),
+	[VBC_DMIC_0R_1L] = TO_STRING(VBC_DMIC_0R_1L),
+	[VBC_DMIC_0L_0R_1L] = TO_STRING(VBC_DMIC_0L_0R_1L),
+	[VBC_DMIC_1R] = TO_STRING(VBC_DMIC_1R),
+	[VBC_DMIC_0L_1R] = TO_STRING(VBC_DMIC_0L_1R),
+	[VBC_DMIC_0R_1R] = TO_STRING(VBC_DMIC_0R_1R),
+	[VBC_DMIC_0L_0R_1R] = TO_STRING(VBC_DMIC_0L_0R_1R),
+	[VBC_DMIC_1L_1R] = TO_STRING(VBC_DMIC_1L_1R),
+	[VBC_DMIC_0L_1L_1R] = TO_STRING(VBC_DMIC_0L_1L_1R),
+	[VBC_DMIC_0R_1L_1R] = TO_STRING(VBC_DMIC_0R_1L_1R),
+	[VBC_DMIC_0L_0R_1L_1R] = TO_STRING(VBC_DMIC_0L_0R_1L_1R),
+};
+
+static const struct soc_enum dmic_chn_sel_enum =
+	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0, VBC_DMIC_MAX, vbc_dmic_sel_txt);
+
+static int vbc_dmic_chn_sel_get(struct snd_kcontrol *kcontrol,
+				 struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct vbc_codec_priv *vbc_codec = snd_soc_codec_get_drvdata(codec);
+
+	ucontrol->value.integer.value[0] = vbc_codec->dmic_chn_sel;
+
+	return 0;
+}
+
+static int vbc_dmic_chn_sel_put(struct snd_kcontrol *kcontrol,
+				 struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_enum *texts = (struct soc_enum *)kcontrol->private_value;
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct vbc_codec_priv *vbc_codec = snd_soc_codec_get_drvdata(codec);
+
+	if (ucontrol->value.integer.value[0] >= texts->items) {
+		pr_err("set dmic_chn_sel, index outof bounds error\n");
+		return -EINVAL;
+	}
+	vbc_codec->dmic_chn_sel = ucontrol->value.integer.value[0];
+
+	return 0;
+}
 
 static const char *vbc_mux_adc_id2name(int id)
 {
@@ -2089,6 +2156,42 @@ static int vbc_put_iis_master_en(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
+static const struct soc_enum vbc_iis_master_wd_width_enum =
+	SPRD_VBC_ENUM(SND_SOC_NOPM, 2, vbc_iis_width_txt);
+
+static int vbc_get_iis_master_width(struct snd_kcontrol *kcontrol,
+				    struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct vbc_codec_priv *vbc_codec = snd_soc_codec_get_drvdata(codec);
+
+	ucontrol->value.integer.value[0] = vbc_codec->iis_mst_width;
+
+	return 0;
+}
+
+static int vbc_put_iis_master_width(struct snd_kcontrol *kcontrol,
+				    struct snd_ctl_elem_value *ucontrol)
+{
+	u32 value;
+	struct soc_enum *texts = (struct soc_enum *)kcontrol->private_value;
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct vbc_codec_priv *vbc_codec = snd_soc_codec_get_drvdata(codec);
+
+	if (ucontrol->value.integer.value[0] >= texts->items) {
+		pr_err("ERR: %s,index outof bounds error\n", __func__);
+		return -EINVAL;
+	}
+
+	value = ucontrol->value.enumerated.item[0];
+	sp_asoc_pr_dbg("set iis master wd width to %s\n", texts->texts[value]);
+
+	vbc_codec->iis_mst_width = value;
+	dsp_vbc_iis_master_width_set(value);
+
+	return 0;
+}
+
 static int vbc_mainmic_path_sel_val_get(struct snd_kcontrol *kcontrol,
 				  struct snd_ctl_elem_value *ucontrol)
 {
@@ -2213,7 +2316,7 @@ static void vbc_profile_try_apply(struct snd_soc_codec *codec,
 
 static int audio_load_firmware_data(struct firmware *fw, char *firmware_path)
 {
-	int read_len, size;
+	int read_len, size, cnt = 0;
 	char *buf;
 	char *audio_image_buffer;
 	int image_size;
@@ -2245,7 +2348,8 @@ static int audio_load_firmware_data(struct firmware *fw, char *firmware_path)
 		pr_err("%s no memory\n", __func__);
 		return -ENOMEM;
 	}
-	pr_info("audio_image_buffer=%p\n", audio_image_buffer);
+	memset(audio_image_buffer, 0, image_size);
+	pr_info("audio_image_buffer=%px\n", audio_image_buffer);
 	size = image_size;
 	buf = audio_image_buffer;
 	do {
@@ -2253,13 +2357,21 @@ static int audio_load_firmware_data(struct firmware *fw, char *firmware_path)
 		if (read_len > 0) {
 			size -= read_len;
 			buf += read_len;
+		} else if (read_len == -EINTR || read_len == -EAGAIN) {
+			cnt++;
+			pr_warn("%s, read failed,read_len=%d, cnt=%d\n",
+				__func__, read_len, cnt);
+			if (cnt < 3) {
+				msleep(50);
+				continue;
+			}
 		}
 	} while (read_len > 0 && size > 0);
 	filp_close(file, NULL);
 	fw->data = audio_image_buffer;
 	fw->size = image_size;
-	pr_info("After read, audio_image_buffer=%p, size=%zd pos:%zd,finish.\n",
-		fw->data, fw->size, (size_t)pos);
+	pr_info("After read, audio_image_buffer=%px, size=%zd, pos:%zd, read_len:%d, finish.\n",
+		fw->data, fw->size, (size_t)pos, read_len);
 
 	return 0;
 }
@@ -2294,7 +2406,12 @@ int vbc_profile_loading(struct snd_soc_codec *codec, int profile_id)
 	strcpy(vbc_codec->firmware_path, AUDIO_FIRMWARE_PATH_BASE);
 	strcat(vbc_codec->firmware_path, vbc_get_profile_name(profile_id));
 	ret = audio_load_firmware_data(&fw, &vbc_codec->firmware_path[0]);
-
+	if (ret) {
+		pr_err("%s load firmware %s fail %d\n", __func__,
+		       vbc_get_profile_name(profile_id), ret);
+		mutex_unlock(&vbc_codec->load_mutex);
+		return ret;
+	}
 
 	fw_data = fw.data;
 	unalign_memcpy(&p_profile_setting->hdr[profile_id], fw_data,
@@ -2325,6 +2442,9 @@ int vbc_profile_loading(struct snd_soc_codec *codec, int profile_id)
 			goto profile_out;
 		}
 	}
+
+	if (len > (fw.size - offset))
+		 len = fw.size - offset;
 	unalign_memcpy(p_profile_setting->data[profile_id],
 		       fw_data + offset, len);
 	sp_asoc_pr_dbg("p_profile_setting->data[profile_id (%d)]",
@@ -2690,18 +2810,18 @@ static int sys_iis_sel_get(struct snd_kcontrol *kcontrol,
 }
 
 static const char * const sys_iis_sel_txt[] = {
-	"vbc_iis0", "vbc_iis1", "vbc_iis2", "vbc_iis3", "vbc_iism0",
+	"vbc_iis0", "vbc_iis1", "vbc_iis2", "vbc_iis3", "vbc_iism0", "ap_iis0",
 };
 
 static const struct soc_enum
 vbc_sys_iis_enum[SYS_IIS_MAX] = {
-	SPRD_VBC_ENUM(SYS_IIS0, 5, sys_iis_sel_txt),
-	SPRD_VBC_ENUM(SYS_IIS1, 5, sys_iis_sel_txt),
-	SPRD_VBC_ENUM(SYS_IIS2, 5, sys_iis_sel_txt),
-	SPRD_VBC_ENUM(SYS_IIS3, 5, sys_iis_sel_txt),
-	SPRD_VBC_ENUM(SYS_IIS4, 5, sys_iis_sel_txt),
-	SPRD_VBC_ENUM(SYS_IIS5, 5, sys_iis_sel_txt),
-	SPRD_VBC_ENUM(SYS_IIS6, 5, sys_iis_sel_txt),
+	SPRD_VBC_ENUM(SYS_IIS0, 6, sys_iis_sel_txt),
+	SPRD_VBC_ENUM(SYS_IIS1, 6, sys_iis_sel_txt),
+	SPRD_VBC_ENUM(SYS_IIS2, 6, sys_iis_sel_txt),
+	SPRD_VBC_ENUM(SYS_IIS3, 6, sys_iis_sel_txt),
+	SPRD_VBC_ENUM(SYS_IIS4, 6, sys_iis_sel_txt),
+	SPRD_VBC_ENUM(SYS_IIS5, 6, sys_iis_sel_txt),
+	SPRD_VBC_ENUM(SYS_IIS6, 6, sys_iis_sel_txt),
 };
 
 static int sys_iis_sel_put(struct snd_kcontrol *kcontrol,
@@ -2931,6 +3051,9 @@ static const char * const vbc_dump_pos_txt[DUMP_POS_MAX] = {
 	[DUMP_POS_A1] = TO_STRING(DUMP_POS_A1),
 	[DUMP_POS_V2] = TO_STRING(DUMP_POS_V2),
 	[DUMP_POS_V1] = TO_STRING(DUMP_POS_V1),
+	[DUMP_POS_DAC0_TO_ADC1] = TO_STRING(DUMP_POS_DAC0_TO_ADC1),
+	[DUMP_POS_DAC0_TO_ADC2] = TO_STRING(DUMP_POS_DAC0_TO_ADC2),
+	[DUMP_POS_DAC0_TO_ADC3] = TO_STRING(DUMP_POS_DAC0_TO_ADC3),
 };
 
 static const struct soc_enum vbc_dump_pos_enum =
@@ -2948,6 +3071,9 @@ static const char *vbc_dumppos2name(int pos)
 		[DUMP_POS_A1] = TO_STRING(DUMP_POS_A1),
 		[DUMP_POS_V2] = TO_STRING(DUMP_POS_V2),
 		[DUMP_POS_V1] = TO_STRING(DUMP_POS_V1),
+		[DUMP_POS_DAC0_TO_ADC1] = TO_STRING(DUMP_POS_DAC0_TO_ADC1),
+		[DUMP_POS_DAC0_TO_ADC2] = TO_STRING(DUMP_POS_DAC0_TO_ADC2),
+		[DUMP_POS_DAC0_TO_ADC3] = TO_STRING(DUMP_POS_DAC0_TO_ADC3),
 	};
 
 	if (pos >= DUMP_POS_MAX) {
@@ -2987,9 +3113,43 @@ static int vbc_put_dump_pos(struct snd_kcontrol *kcontrol,
 		return -EINVAL;
 	}
 
-	sp_asoc_pr_dbg("%s %s -> %s\n", __func__,
-		       vbc_dumppos2name(val), texts->texts[val]);
+	sp_asoc_pr_dbg("%s %s -> %s, vbc_dump_position %s\n", __func__,
+		       vbc_dumppos2name(val), texts->texts[val],
+		       vbc_dumppos2name(vbc_codec->vbc_dump_position_cmd));
 	vbc_codec->vbc_dump_position = val;
+
+	return 0;
+}
+
+static int vbc_get_dump_pos_cmd(struct snd_kcontrol *kcontrol,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct vbc_codec_priv *vbc_codec = snd_soc_codec_get_drvdata(codec);
+
+	ucontrol->value.integer.value[0] = vbc_codec->vbc_dump_position_cmd;
+
+	return 0;
+}
+
+static int vbc_put_dump_pos_cmd(struct snd_kcontrol *kcontrol,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_enum *texts = (struct soc_enum *)kcontrol->private_value;
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct vbc_codec_priv *vbc_codec = snd_soc_codec_get_drvdata(codec);
+	int val = ucontrol->value.integer.value[0];
+
+	if (val >= texts->items) {
+		pr_err("put_dump_pos_cmd index outof bounds error\n");
+		return -EINVAL;
+	}
+
+	vbc_codec->vbc_dump_position_cmd = val;
+	sp_asoc_pr_dbg("%s -> %s, vbc_dump_position %s\n",
+		       vbc_dumppos2name(val), texts->texts[val],
+		       vbc_dumppos2name(vbc_codec->vbc_dump_position));
+	scene_dump_set(vbc_codec->vbc_dump_position_cmd);
 
 	return 0;
 }
@@ -3051,7 +3211,69 @@ static int vbc_iis_inf_sys_sel_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+static int vbc_voice_capture_type_get(struct snd_kcontrol *kcontrol,
+				 struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct vbc_codec_priv *vbc_codec = snd_soc_codec_get_drvdata(codec);
 
+	ucontrol->value.integer.value[0] = vbc_codec->voice_capture_type;
+
+	return 0;
+}
+
+static int vbc_voice_capture_type_put(struct snd_kcontrol *kcontrol,
+				 struct snd_ctl_elem_value *ucontrol)
+{
+	int value;
+	struct soc_enum *texts = (struct soc_enum *)kcontrol->private_value;
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct vbc_codec_priv *vbc_codec = snd_soc_codec_get_drvdata(codec);
+
+	if (ucontrol->value.integer.value[0] >= texts->items) {
+		pr_err("ERR: %s,index outof bounds error\n", __func__);
+		return -EINVAL;
+	}
+
+	value = ucontrol->value.enumerated.item[0];
+	sp_asoc_pr_dbg("%s, texts->texts[%d] =%s\n",
+		       __func__, value, texts->texts[value]);
+	vbc_codec->voice_capture_type = value;
+
+	return value;
+}
+
+static int vbc_voice_pcm_play_mode_get(struct snd_kcontrol *kcontrol,
+				 struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct vbc_codec_priv *vbc_codec = snd_soc_codec_get_drvdata(codec);
+
+	ucontrol->value.integer.value[0] = vbc_codec->voice_pcm_play_mode;
+
+	return 0;
+}
+
+static int vbc_voice_pcm_play_mode_put(struct snd_kcontrol *kcontrol,
+				 struct snd_ctl_elem_value *ucontrol)
+{
+	int value;
+	struct soc_enum *texts = (struct soc_enum *)kcontrol->private_value;
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct vbc_codec_priv *vbc_codec = snd_soc_codec_get_drvdata(codec);
+
+	if (ucontrol->value.integer.value[0] >= texts->items) {
+		pr_err("ERR: %s,index outof bounds error\n", __func__);
+		return -EINVAL;
+	}
+
+	value = ucontrol->value.enumerated.item[0];
+	sp_asoc_pr_dbg("%s, texts->texts[%d] =%s\n",
+		       __func__, value, texts->texts[value]);
+	vbc_codec->voice_pcm_play_mode = value;
+
+	return value;
+}
 
 /* -9450dB to 0dB in 150dB steps ( mute instead of -9450dB) */
 static const DECLARE_TLV_DB_SCALE(mdg_tlv, -9450, 150, 1);
@@ -3462,6 +3684,10 @@ static const struct snd_kcontrol_new vbc_codec_snd_controls[] = {
 	SOC_ENUM_EXT("VBC_IIS_MST_SEL_3_TYPE",
 		     vbc_iis_mst_sel_enum[IIS_MST_SEL_3], vbc_get_mst_sel_type,
 		     vbc_put_mst_sel_type),
+
+	SOC_ENUM_EXT("VBC_IIS_MST_WIDTH_SET", vbc_iis_master_wd_width_enum,
+		     vbc_get_iis_master_width, vbc_put_iis_master_width),
+
 	SOC_ENUM_EXT("VBC_DSP_MAINMIC_PATH_SEL",
 		     vbc_mainmic_path_enum[MAINMIC_USED_DSP_NORMAL_ADC],
 		     vbc_mainmic_path_sel_val_get,
@@ -3498,11 +3724,24 @@ static const struct snd_kcontrol_new vbc_codec_snd_controls[] = {
 		       vbc_reg_get, vbc_reg_put),
 	SOC_ENUM_EXT("VBC_DUMP_POS", vbc_dump_pos_enum,
 		vbc_get_dump_pos, vbc_put_dump_pos),
+	SOC_ENUM_EXT("VBC_DUMP_POS_CMD", vbc_dump_pos_enum,
+		     vbc_get_dump_pos_cmd, vbc_put_dump_pos_cmd),
 	SND_SOC_BYTES_EXT("SBC_PARAS", SBC_PARA_BYTES,
 		sbc_paras_get, sbc_paras_put),
 
 	SOC_ENUM_EXT("VBC_IIS_INF_SYS_SEL", vbc_iis_inf_sys_sel_enum,
 		vbc_iis_inf_sys_sel_get, vbc_iis_inf_sys_sel_put),
+	SOC_ENUM_EXT("DMIC_CHN_SEL", dmic_chn_sel_enum,
+		     vbc_dmic_chn_sel_get, vbc_dmic_chn_sel_put),
+
+	/* VOICE CAPTURE */
+	SOC_ENUM_EXT("VBC_DSP_VOICE_CAPTURE_TYPE",
+		     dsp_voice_capture_enum,
+		     vbc_voice_capture_type_get, vbc_voice_capture_type_put),
+	/* VOICE PCM PLAYBACK */
+	SOC_ENUM_EXT("VBC_DSP_VOICE_PCM_PLAY_MODE",
+		     dsp_voice_pcm_play_enum,
+		     vbc_voice_pcm_play_mode_get, vbc_voice_pcm_play_mode_put),
 };
 
 static u32 vbc_codec_read(struct snd_soc_codec *codec,

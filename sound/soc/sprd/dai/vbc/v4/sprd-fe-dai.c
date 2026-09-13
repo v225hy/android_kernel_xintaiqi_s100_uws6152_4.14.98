@@ -65,6 +65,12 @@ static struct sprd_pcm_dma_params pcm_dsp_fm_cap_mcdt;
 static struct sprd_pcm_dma_params pcm_dsp_btsco_cap_mcdt;
 static struct sprd_pcm_dma_params vbc_pcm_dump;
 static struct sprd_pcm_dma_params vbc_btsco_cap_ap;
+static struct sprd_pcm_dma_params vbc_pcm_recognise_capture_mcdt;
+static struct sprd_pcm_dma_params pcm_voice_play_mcdt;
+
+/* HFP 前后端 DMA 参数 */
+static struct sprd_pcm_dma_params vbc_pcm_hfp_p;
+static struct sprd_pcm_dma_params vbc_pcm_hfp_c;
 
 static const char *stream_to_str(int stream)
 {
@@ -91,6 +97,9 @@ static char *fe_dai_id_str[FE_DAI_ID_MAX] = {
 	[FE_DAI_ID_FM_DSP] = TO_STRING(FE_DAI_ID_FM_DSP),
 	[FE_DAI_ID_DUMP] = TO_STRING(FE_DAI_ID_DUMP),
 	[FE_DAI_ID_BTSCO_CAP_AP] = TO_STRING(FE_DAI_ID_BTSCO_CAP_AP),
+	[FE_DAI_ID_HFP] = TO_STRING(FE_DAI_ID_HFP),
+	[FE_DAI_ID_RECOGNISE_CAPTURE] = TO_STRING(FE_DAI_ID_RECOGNISE_CAPTURE),
+	[FE_DAI_ID_VOICE_PCM_P] = TO_STRING(FE_DAI_ID_VOICE_PCM_P),
 };
 
 static const char *fe_dai_id_to_str(int fe_dai_id)
@@ -118,7 +127,13 @@ static void mcdt_dma_deinit(struct snd_soc_dai *fe_dai, int stream)
 	case FE_DAI_ID_VOICE:
 	case FE_DAI_ID_FM_DSP:
 	default:
-	break;
+		break;
+	case FE_DAI_ID_HFP:
+		if (is_playback)
+			mcdt_dac_dma_disable(MCDT_CHAN_VOICE_PCM_P);
+		else
+			mcdt_adc_dma_disable(MCDT_CHAN_RECOGNISE_CAPTURE);
+		break;
 	case FE_DAI_ID_CAPTURE_DSP:
 		mcdt_adc_dma_disable(MCDT_CHAN_DSP_CAP);
 		break;
@@ -149,6 +164,12 @@ static void mcdt_dma_deinit(struct snd_soc_dai *fe_dai, int stream)
 	case FE_DAI_ID_A2DP_PCM:
 		mcdt_dac_dma_disable(MCDT_CHAN_A2DP_PCM);
 		break;
+	case FE_DAI_ID_RECOGNISE_CAPTURE:
+		mcdt_adc_dma_disable(MCDT_CHAN_RECOGNISE_CAPTURE);
+		break;
+	case FE_DAI_ID_VOICE_PCM_P:
+		mcdt_dac_dma_disable(MCDT_CHAN_VOICE_PCM_P);
+		break;
 	}
 }
 
@@ -165,6 +186,17 @@ static int mcdt_dma_config_init(struct snd_soc_dai *fe_dai, int stream)
 	case FE_DAI_ID_FM_DSP:
 	default:
 		uid = 0;
+		break;
+	case FE_DAI_ID_HFP:
+		if (is_playback) {
+			uid = mcdt_dac_dma_enable(MCDT_CHAN_VOICE_PCM_P,
+				MCDT_EMPTY_WMK_VOICE_PCM_P);
+			vbc_pcm_hfp_p.channels[0] = uid;
+		} else {
+			uid = mcdt_adc_dma_enable(MCDT_CHAN_RECOGNISE_CAPTURE,
+				MCDT_FULL_WMK_RECOGNISE_CAPTURE);
+			vbc_pcm_hfp_c.channels[0] = uid;
+		}
 		break;
 	case FE_DAI_ID_CAPTURE_DSP:
 		uid = mcdt_adc_dma_enable(MCDT_CHAN_DSP_CAP,
@@ -218,6 +250,16 @@ static int mcdt_dma_config_init(struct snd_soc_dai *fe_dai, int stream)
 			MCDT_EMPTY_WMK_A2DP_PCM);
 		vbc_pcm_a2dp_p.channels[0] = uid;
 		break;
+	case FE_DAI_ID_RECOGNISE_CAPTURE:
+		uid = mcdt_adc_dma_enable(MCDT_CHAN_RECOGNISE_CAPTURE,
+			MCDT_FULL_WMK_RECOGNISE_CAPTURE);
+		vbc_pcm_recognise_capture_mcdt.channels[0] = uid;
+		break;
+	case FE_DAI_ID_VOICE_PCM_P:
+		uid = mcdt_dac_dma_enable(MCDT_CHAN_VOICE_PCM_P,
+			MCDT_EMPTY_WMK_VOICE_PCM_P);
+		pcm_voice_play_mcdt.channels[0] = uid;
+		break;
 	}
 
 	if (uid < 0) {
@@ -263,7 +305,28 @@ static void sprd_dma_config(struct snd_pcm_substream *substream,
 	default:
 		pr_info("%s %s do not use dma\n", __func__,
 			fe_dai_id_to_str(fe_dai->id));
-	break;
+		break;
+	case FE_DAI_ID_HFP:
+		if (is_playback) {
+			vbc_pcm_hfp_p.name = "VBC HFP P";
+			vbc_pcm_hfp_p.irq_type = SPRD_DMA_BLK_INT;
+			vbc_pcm_hfp_p.desc.datawidth = DMA_SLAVE_BUSWIDTH_4_BYTES;
+			vbc_pcm_hfp_p.desc.fragmens_len = MCDT_VOICE_PCM_P_FRAGMENT;
+			vbc_pcm_hfp_p.use_mcdt = 1;
+			vbc_pcm_hfp_p.dev_paddr[0] =
+				mcdt_dac_dma_phy_addr(MCDT_CHAN_VOICE_PCM_P);
+			vbc_pcm_hfp_p.used_dma_channel_name[0] = "hfp_p";
+		} else {
+			vbc_pcm_hfp_c.name = "VBC HFP C";
+			vbc_pcm_hfp_c.irq_type = SPRD_DMA_BLK_INT;
+			vbc_pcm_hfp_c.desc.datawidth = DMA_SLAVE_BUSWIDTH_4_BYTES;
+			vbc_pcm_hfp_c.desc.fragmens_len = MCDT_RECOGNISE_C_FRAGMENT;
+			vbc_pcm_hfp_c.use_mcdt = 1;
+			vbc_pcm_hfp_c.dev_paddr[0] =
+				mcdt_adc_dma_phy_addr(MCDT_CHAN_RECOGNISE_CAPTURE);
+			vbc_pcm_hfp_c.used_dma_channel_name[0] = "hfp_c";
+		}
+		break;
 	case FE_DAI_ID_NORMAL_AP01:
 		if (is_playback) {
 			/*normal ap01 playback*/
@@ -434,7 +497,7 @@ static void sprd_dma_config(struct snd_pcm_substream *substream,
 			/*voip capture*/
 			pcm_voip_record_mcdt.name = "PCM voip record With MCDT";
 			pcm_voip_record_mcdt.irq_type = SPRD_DMA_BLK_INT;
-			pcm_voip_record_mcdt.desc.datawidth = SPRD_DMA_BLK_INT;
+			pcm_voip_record_mcdt.desc.datawidth = DMA_SLAVE_BUSWIDTH_4_BYTES;
 			pcm_voip_record_mcdt.desc.fragmens_len =
 				MCDT_VOIP_C_FRAGMENT;
 			pcm_voip_record_mcdt.use_mcdt = 1;
@@ -561,6 +624,36 @@ static void sprd_dma_config(struct snd_pcm_substream *substream,
 		vbc_btsco_cap_ap.used_dma_channel_name[1] =
 			"normal_c_r";
 		break;
+	case FE_DAI_ID_RECOGNISE_CAPTURE:
+		/*recognise capture*/
+		vbc_pcm_recognise_capture_mcdt.name =
+			"VBC PCM recognise C With MCDT";
+		vbc_pcm_recognise_capture_mcdt.irq_type = SPRD_DMA_BLK_INT;
+		vbc_pcm_recognise_capture_mcdt.desc.datawidth =
+			DMA_SLAVE_BUSWIDTH_4_BYTES;
+		vbc_pcm_recognise_capture_mcdt.desc.fragmens_len =
+			MCDT_RECOGNISE_C_FRAGMENT;
+		vbc_pcm_recognise_capture_mcdt.use_mcdt = 1;
+		/* dma src address */
+		vbc_pcm_recognise_capture_mcdt.dev_paddr[0] =
+			mcdt_adc_dma_phy_addr(MCDT_CHAN_RECOGNISE_CAPTURE);
+		vbc_pcm_recognise_capture_mcdt.used_dma_channel_name[0] =
+			"recognise_c";
+		break;
+	case FE_DAI_ID_VOICE_PCM_P:
+		/*voice pcm play*/
+		pcm_voice_play_mcdt.name = "PCM voice play With MCDT";
+		pcm_voice_play_mcdt.irq_type = SPRD_DMA_BLK_INT;
+		pcm_voice_play_mcdt.desc.datawidth =
+			DMA_SLAVE_BUSWIDTH_4_BYTES;
+		pcm_voice_play_mcdt.desc.fragmens_len =
+			MCDT_VOICE_PCM_P_FRAGMENT;
+		pcm_voice_play_mcdt.use_mcdt = 1;
+		pcm_voice_play_mcdt.dev_paddr[0] =
+			mcdt_dac_dma_phy_addr(MCDT_CHAN_VOICE_PCM_P);
+		pcm_voice_play_mcdt.used_dma_channel_name[0] =
+			"voice_pcm_p";
+		break;
 	}
 }
 
@@ -578,6 +671,9 @@ struct sprd_pcm_dma_params *get_dma_data_params(struct snd_soc_dai *fe_dai,
 	case FE_DAI_ID_FM_DSP:
 	default:
 		dma_data = NULL;
+		break;
+	case FE_DAI_ID_HFP:
+		dma_data = is_playback ? &vbc_pcm_hfp_p : &vbc_pcm_hfp_c;
 		break;
 	case FE_DAI_ID_NORMAL_AP01:
 		dma_data = is_playback ? &vbc_pcm_normal_ap01_p :
@@ -622,6 +718,12 @@ struct sprd_pcm_dma_params *get_dma_data_params(struct snd_soc_dai *fe_dai,
 	case FE_DAI_ID_BTSCO_CAP_AP:
 		dma_data = &vbc_btsco_cap_ap;
 		break;
+	case FE_DAI_ID_RECOGNISE_CAPTURE:
+		dma_data = &vbc_pcm_recognise_capture_mcdt;
+		break;
+	case FE_DAI_ID_VOICE_PCM_P:
+		dma_data = &pcm_voice_play_mcdt;
+		break;
 	}
 
 	return dma_data;
@@ -633,7 +735,6 @@ static int fe_hw_params(struct snd_pcm_substream *substream,
 {
 	struct sprd_pcm_dma_params *dma_data = NULL;
 	int data_fmt;
-
 	int ret;
 
 	pr_info("%s fe dai: %s(%d) %s\n", __func__,
@@ -652,9 +753,11 @@ static int fe_hw_params(struct snd_pcm_substream *substream,
 		agdsp_access_disable();
 		return ret;
 	}
+	/* 此后 MCDT 通道已分配，任何错误返回前必须调用 mcdt_dma_deinit */
 	agdsp_access_disable();
 
 	sprd_dma_config(substream, params, fe_dai);
+
 	switch (params_format(params)) {
 	case SNDRV_PCM_FORMAT_S16_LE:
 		data_fmt = VBC_DAT_L16;
@@ -665,8 +768,11 @@ static int fe_hw_params(struct snd_pcm_substream *substream,
 	default:
 		data_fmt = VBC_DAT_L16;
 		pr_err("%s unsupported data format\n", __func__);
-		break;
+		/* 新增错误处理：格式不支持时释放 MCDT 并返回 */
+		ret = -EINVAL;
+		goto err_mcdt_deinit;
 	}
+
 	dma_data = get_dma_data_params(fe_dai, substream->stream);
 	if (dma_data) {
 		if (VBC_DAT_L24 == data_fmt || 1 == dma_data->use_mcdt)
@@ -676,8 +782,12 @@ static int fe_hw_params(struct snd_pcm_substream *substream,
 	}
 
 	snd_soc_dai_set_dma_data(fe_dai, substream, dma_data);
-
 	return 0;
+
+err_mcdt_deinit:
+	/* 如果未来在此函数中添加其他可能失败的操作，可沿用此标号 */
+	mcdt_dma_deinit(fe_dai, substream->stream);
+	return ret;
 }
 
 static int fe_hw_free(struct snd_pcm_substream *substream,
@@ -744,7 +854,7 @@ static const struct snd_soc_component_driver sprd_fe_dai_component = {
 	.name = "sprd-dai-fe",
 };
 
-static struct snd_soc_dai_driver sprd_fe_dais[FE_DAI_ID_MAX] = {
+static struct snd_soc_dai_driver sprd_fe_dais[] = {
 	/* 0: FE_DAI_ID_NORMAL_AP01 */
 	{
 		.id = FE_DAI_ID_NORMAL_AP01,
@@ -1126,12 +1236,33 @@ static struct snd_soc_dai_driver sprd_fe_dais[FE_DAI_ID_MAX] = {
 		},
 		.ops = &sprd_fe_dai_ops,
 	},
-	/* 18: FE_DAI_ID_CODEC_TEST */
+	/*18: FE_DAI_ID_VOICE_PCM_P*/
 	{
-		.id = FE_DAI_ID_CODEC_TEST,
-		.name = TO_STRING(FE_DAI_ID_CODEC_TEST),
+		.id = FE_DAI_ID_VOICE_PCM_P,
+		.name = TO_STRING(FE_DAI_ID_VOICE_PCM_P),
+		.probe = fe_dai_probe,
 		.playback = {
-			.stream_name = "FE_DAI_CODEC_TEST_P",
+			.stream_name = "FE_DAI_VOICE_PCM_P",
+			.aif_name = "FE_IF_VOICE_PCM_P",
+			.rates = SNDRV_PCM_RATE_CONTINUOUS,
+			.formats = (SNDRV_PCM_FMTBIT_S16_LE |
+						SNDRV_PCM_FMTBIT_S24_LE),
+			.channels_min = 1,
+			.channels_max = 2,
+			.rate_min = 8000,
+			.rate_max = 192000,
+		},
+		.ops = &sprd_fe_dai_ops,
+	},
+
+	/* 19: FE_DAI_ID_HFP */
+	{
+		.id = FE_DAI_ID_HFP,
+		.name = TO_STRING(FE_DAI_ID_HFP),
+		.probe = fe_dai_probe,
+		.playback = {
+			.stream_name = "FE_DAI_HFP_P",
+			.aif_name = "FE_IF_HFP_P",
 			.rates = SNDRV_PCM_RATE_CONTINUOUS,
 			.formats = (SNDRV_PCM_FMTBIT_S16_LE |
 						SNDRV_PCM_FMTBIT_S24_LE),
@@ -1141,15 +1272,36 @@ static struct snd_soc_dai_driver sprd_fe_dais[FE_DAI_ID_MAX] = {
 			.rate_max = 192000,
 		},
 		.capture = {
-			.stream_name = "FE_DAI_CODEC_TEST_C",
+			.stream_name = "FE_DAI_HFP_C",
+			.aif_name = "FE_IF_HFP_C",
 			.rates = SNDRV_PCM_RATE_CONTINUOUS,
 			.formats = (SNDRV_PCM_FMTBIT_S16_LE |
-					SNDRV_PCM_FMTBIT_S24_LE),
+						SNDRV_PCM_FMTBIT_S24_LE),
 			.channels_min = 1,
 			.channels_max = 2,
 			.rate_min = 8000,
 			.rate_max = 192000,
 		},
+		.ops = &sprd_fe_dai_ops,
+	},
+
+	/* 20: FE_DAI_ID_RECOGNISE_CAPTURE */
+	{
+		.id = FE_DAI_ID_RECOGNISE_CAPTURE,
+		.name = TO_STRING(FE_DAI_ID_RECOGNISE_CAPTURE),
+		.probe = fe_dai_probe,
+		.capture = {
+			.stream_name = "FE_DAI_RECOGNISE_CAP_C",
+			.aif_name = "FE_IF_RECOGNISE_CAP_C",
+			.rates = SNDRV_PCM_RATE_CONTINUOUS,
+			.formats = (SNDRV_PCM_FMTBIT_S16_LE |
+						SNDRV_PCM_FMTBIT_S24_LE),
+			.channels_min = 1,
+			.channels_max = 2,
+			.rate_min = 8000,
+			.rate_max = 192000,
+		},
+		.ops = &sprd_fe_dai_ops,
 	},
 };
 static int sprd_fe_dai_dev_probe(struct platform_device *pdev)
@@ -1200,4 +1352,3 @@ late_initcall(sprd_fe_dai_driver_init);
 MODULE_DESCRIPTION("SPRD ASoC FRONT END CPU DAI");
 MODULE_AUTHOR("Lei Ning <lei.ning@unisoc.com>");
 MODULE_LICENSE("GPL");
-

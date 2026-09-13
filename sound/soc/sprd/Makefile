@@ -4,8 +4,7 @@ SPRD_SOUND_TREE				:= sound/soc/sprd/
 SPRD_AUDIO_ASSISTANT_TREE		:= drivers/misc/sprd_audio/
 ccflags-y				+= -I$(SPRD_SOUND_TREE)/codec/sprd/
 subdir-ccflags-y			+= -I$(SPRD_SOUND_TREE)/include/ \
-					   -I$(SPRD_AUDIO_ASSISTANT_TREE)/agdsp_access/ \
-					   -I$(SPRD_SOUND_TREE)codec/sprd/ucp1301/
+					   -I$(SPRD_AUDIO_ASSISTANT_TREE)/agdsp_access/
 
 obj-$(CONFIG_SND_SOC_SPRD)		+= sprd-asoc-common.o sprd-asoc-card-utils.o \
 					   sprd-asoc-card-utils-legacy.o \

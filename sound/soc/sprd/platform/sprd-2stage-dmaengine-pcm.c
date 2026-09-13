@@ -114,6 +114,7 @@ struct sprd_runtime_data {
 	int dma_addr_offset;
 	struct sprd_pcm_dma_params *params;
 	struct dma_chan *dma_chn[2];
+	void *dma_callback1_func[2];
 	struct sprd_dma_cfg *dma_config_ptr[SPRD_PCM_CHANNEL_MAX];
 	struct sprd_dma_callback_data *dma_cb_ptr[SPRD_PCM_CHANNEL_MAX];
 	dma_addr_t dma_linklist_cfg_phy[2];
@@ -134,6 +135,7 @@ struct sprd_runtime_data {
 	s32 interleaved2;
 	struct dma_chan *dma_chn2;
 	struct sprd_dma_cfg *dma_cfg_buf2;
+	void *dma_callback2_func;
 	struct sprd_dma_callback_data *dma_callback_data2;
 	dma_addr_t dma_linklist_cfg_phy2;
 	void *dma_linklist_cfg_virt2;
@@ -181,8 +183,11 @@ static struct dma_chan *dma_chan[DMA_CHAN_MAX] = { NULL };
 	SNDRV_PCM_INFO_INTERLEAVED | \
 	SNDRV_PCM_INFO_PAUSE | SNDRV_PCM_INFO_RESUME)
 #define SPRD_SNDRV_PCM_FMTBIT (SNDRV_PCM_FMTBIT_S16_LE | \
-			       SNDRV_PCM_FMTBIT_S24_LE)
+			       SNDRV_PCM_FMTBIT_S24_LE | \
+			       SNDRV_PCM_FMTBIT_S32_LE)
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 int sprd_lightsleep_disable(const char *id, int disalbe)
 __attribute__ ((weak, alias("__sprd_lightsleep_disable")));
 
@@ -258,6 +263,7 @@ static int __sprd_lightsleep_disable(const char *id, int disable)
 	sp_asoc_pr_dbg("NO lightsleep control function %d\n", disable);
 	return 0;
 }
+#pragma GCC diagnostic pop
 
 static void sprd_pcm_proc_init(struct snd_pcm_substream *substream);
 static void sprd_pcm_proc_done(struct snd_pcm_substream *substream);
@@ -742,6 +748,8 @@ static int sprd_pcm_alloc_dma_cfg(struct snd_pcm_substream *substream,
 	sprd_rtd->dma_cfg_buf2 =
 	    devm_kzalloc(dev,
 			 sprd_rtd->hw_chan2 * linklist_node_size2, GFP_KERNEL);
+	if (!sprd_rtd->dma_cfg_buf2)
+		return -ENOMEM;
 
 	sprd_rtd->dma_cfg_buf2->sg =
 		(struct scatterlist *)((u8 *)sprd_rtd->dma_cfg_buf2 +
@@ -751,11 +759,6 @@ static int sprd_pcm_alloc_dma_cfg(struct snd_pcm_substream *substream,
 	    ("%s cfg_buf2=%p, stage[%d] size=%#x\n",
 	     __func__, sprd_rtd->dma_cfg_buf2, stages,
 	     sprd_rtd->hw_chan2 * linklist_node_size2);
-	if (!sprd_rtd->dma_cfg_buf2) {
-		pr_err("%s %d alloc failed size =%#x\n", __func__, __LINE__,
-		       sprd_rtd->hw_chan2 * linklist_node_size2);
-		return -ENOMEM;
-	}
 
 	sprd_rtd->dma_callback_data2 =
 	    devm_kzalloc(dev, sprd_rtd->hw_chan2 *
@@ -1070,7 +1073,7 @@ static void hw_params_config(struct snd_pcm_substream *substream,
 		hw->info = SPRD_SNDRV_PCM_INFO_COMMON;
 		hw->formats = SPRD_SNDRV_PCM_FMTBIT;
 		hw->period_bytes_min = 8 * 2;
-		hw->period_bytes_max = I2S_BUFFER_BYTES_MAX;
+		hw->period_bytes_max = I2S_BUFFER_BYTES_MAX / 2;
 		hw->buffer_bytes_max = I2S_BUFFER_BYTES_MAX;
 		hw->periods_max = PAGE_SIZE / DMA_LINKLIST_CFG_NODE_SIZE;
 	} else {
@@ -1114,7 +1117,7 @@ static void hw_params_config(struct snd_pcm_substream *substream,
 			hw->buffer_bytes_max =
 				NORMAL_PLAYBACK_BUFFER_BYTES_MAX;
 		} else if (sprd_is_i2s(srtd->cpu_dai)) {
-			hw->period_bytes_max = 32 * 2 * 100;
+			hw->period_bytes_max = I2S_BUFFER_BYTES_MAX / 2;
 			hw->buffer_bytes_max = I2S_BUFFER_BYTES_MAX;
 		}
 	}
@@ -1677,6 +1680,7 @@ static struct dma_async_tx_descriptor *dma_cfg_hw(struct dma_chan *chn,
 		     __func__, chn->chan_id);
 		desp->callback = callback;
 		desp->callback_param = data;
+		desp->callback_result = NULL;
 	}
 
 	return desp;
@@ -1911,7 +1915,7 @@ static int sprd_pcm_hw_params_2stage(struct snd_pcm_substream *substream,
 	u32 offset_node_idx_2 = 0;
 	u32 count_max_r = 0;
 	unsigned long start_addr_p = 0;
-	int direction;
+	int direction = 0;
 
 	priv_data = snd_soc_platform_get_drvdata(srtd->platform);
 	if (!priv_data) {
@@ -2024,6 +2028,7 @@ static int sprd_pcm_hw_params_2stage(struct snd_pcm_substream *substream,
 			callback_1 = NULL;
 			callback_param_1 = NULL;
 		}
+		rtd->dma_callback1_func[i] = callback_1;
 		/* set flag */
 		if (i == 0) {
 			if (srtd->cpu_dai->id == VBC_DAI_NORMAL) {
@@ -2145,6 +2150,7 @@ static int sprd_pcm_hw_params_2stage(struct snd_pcm_substream *substream,
 		callback_2 = sprd_pcm_dma_buf_done_level2;
 		callback_param_2 = (void *)(rtd->dma_callback_data2);
 	}
+	rtd->dma_callback2_func = callback_2;
 	if (srtd->cpu_dai->id == VBC_DAI_NORMAL) {
 		flag_2 = SPRD_DMA_FLAGS(SPRD_DMA_DST_CHN1,
 					SPRD_DMA_TRANS_DONE_TRG,
@@ -2489,7 +2495,8 @@ static int sprd_pcm_hw_params1(struct snd_pcm_substream *substream,
 		flag = SPRD_DMA_FLAGS(0,
 				      0, SPRD_DMA_FRAG_REQ, SPRD_DMA_NO_INT);
 	}
-
+	rtd->dma_callback1_func[0] = callback;
+	rtd->dma_callback1_func[1] = callback;
 	normal_dma_protect_mutex_lock(substream);
 	/*
 	 * if PM_POST_SUSPEND resumed the dma_chn has become null,
@@ -2527,7 +2534,8 @@ static int sprd_pcm_hw_params1(struct snd_pcm_substream *substream,
 		}
 		tmp_tx_des =
 			dma_cfg_hw(rtd->dma_chn[i], rtd->dma_config_ptr[i],
-				   callback, rtd->dma_cb_ptr[i]);
+				   rtd->dma_callback1_func[i],
+				   rtd->dma_cb_ptr[i]);
 		if (!tmp_tx_des) {
 			normal_dma_protect_mutex_unlock(substream);
 			pr_err("%s, dma_cfg_hw failed!\n", __func__);
@@ -2749,24 +2757,41 @@ static int sprd_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 		if (is_use_2stage_dma(srtd, substream->stream)) {
 			/*copy form ddr to iram */
 			init_iram_data_2stage(substream);
+			if (!rtd->dma_tx_des2) {
+				rtd->dma_tx_des2 =
+					dma_cfg_hw(rtd->dma_chn2,
+					rtd->dma_cfg_buf2,
+					rtd->dma_callback2_func,
+					rtd->dma_callback_data2);
+			}
 			if (rtd->dma_tx_des2)
 				rtd->cookie2 =
-				    dmaengine_submit(rtd->dma_tx_des2);
+					dmaengine_submit(rtd->dma_tx_des2);
+			else {
+				pr_err("%s, dma2_cfg_hw failed!\n", __func__);
+				return -ENOMEM;
+			}
 		} else {
 			dma_chanall_lslp_ena(true);
 		}
 		normal_dma_protect_spin_lock(substream);
-		if (!rtd->dma_tx_des[0]) {
-			normal_dma_protect_spin_unlock(substream);
-			pr_info("%s dma_tx_des[0] is null\n",
-				__func__);
-			return 0;
-		}
-
 		for (i = 0; i < rtd->hw_chan; i++) {
-			if (rtd->dma_tx_des[i])
-				rtd->cookie[i] =
-				    dmaengine_submit(rtd->dma_tx_des[i]);
+			if (!rtd->dma_tx_des[i]) {
+				rtd->dma_tx_des[i] =
+				dma_cfg_hw(rtd->dma_chn[i],
+					rtd->dma_config_ptr[i],
+					rtd->dma_callback1_func[i],
+					rtd->dma_cb_ptr[i]);
+				if (!rtd->dma_tx_des[i]) {
+					pr_err("%s, dma_cfg_hw :%d failed!\n",
+						__func__, i);
+					normal_dma_protect_spin_unlock(substream
+								       );
+					return -ENOMEM;
+				}
+			}
+			rtd->cookie[i] =
+			    dmaengine_submit(rtd->dma_tx_des[i]);
 		}
 
 		if (rtd->dma_chn2)
@@ -2790,12 +2815,16 @@ static int sprd_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 			return 0;
 		}
 		for (i = 0; i < rtd->hw_chan; i++) {
-			if (rtd->dma_chn[i])
-				dmaengine_pause(rtd->dma_chn[i]);
+			if (rtd->dma_chn[i]) {
+				dmaengine_terminate_all(rtd->dma_chn[i]);
+				rtd->dma_tx_des[i] = NULL;
+			}
 		}
 		normal_dma_protect_spin_unlock(substream);
-		if (rtd->dma_chn2)
-			dmaengine_pause(rtd->dma_chn2);
+		if (rtd->dma_chn2) {
+			dmaengine_terminate_all(rtd->dma_chn2);
+			rtd->dma_tx_des2 = NULL;
+		}
 		rtd->cb_called = 0;
 		if (is_use_2stage_dma(srtd, substream->stream) == false)
 			dma_chanall_lslp_ena(false);
@@ -3041,7 +3070,11 @@ static struct snd_pcm_ops sprd_pcm_ops = {
 };
 
 #ifdef CONFIG_ARM64
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#pragma clang diagnostic ignored "-Wshift-count-overflow"
 static u64 sprd_pcm_dmamask = DMA_BIT_MASK(64);
+#pragma GCC diagnostic pop
 #else
 static u64 sprd_pcm_dmamask = DMA_BIT_MASK(32);
 #endif
@@ -3343,14 +3376,14 @@ static int aud_init_iram_addr(struct snd_soc_platform *platform)
 						   &priv_data->iram_size);
 	if (priv_data->iram_size > 0) {
 		priv_data->iram_virt_addr =
-		    (char *)devm_ioremap_nocache(platform->dev,
-						 priv_data->iram_phy_addr,
-						 priv_data->iram_size);
+		    (char *)audio_mem_vmap(priv_data->iram_phy_addr,
+						 priv_data->iram_size,
+						 1);
 		if (!priv_data->iram_virt_addr) {
 			pr_err("%s %d failed\n", __func__, __LINE__);
 			return -1;
 		}
-		memset_io((void *)priv_data->iram_virt_addr, 0,
+		memset((void *)priv_data->iram_virt_addr, 0,
 			  priv_data->iram_size);
 	}
 
@@ -3393,7 +3426,7 @@ static void aud_clear_iram_addr(struct snd_soc_platform *platform)
 	audio_mem_free(IRAM_BASE, priv_data->iram_phy_addr,
 		       priv_data->iram_size);
 	if (priv_data->iram_size > 0) {
-		devm_kfree(platform->dev, priv_data->iram_virt_addr);
+		audio_mem_unmap(priv_data->iram_virt_addr);
 		priv_data->iram_virt_addr = NULL;
 		priv_data->iram_size = 0;
 	}

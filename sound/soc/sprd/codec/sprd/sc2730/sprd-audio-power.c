@@ -206,6 +206,7 @@ static int audio_power_set_voltage(struct regulator_dev *rdev, int min_uV,
 
 	return -EDOM;
 }
+
 static int sprd_audio_power_enable(struct regulator_dev *rdev)
 {
 	struct sprd_audio_power_info *info = rdev_get_drvdata(rdev);
@@ -731,7 +732,6 @@ static int sprd_audio_power_probe(struct platform_device *pdev)
 		kfree(info);
 		return PTR_ERR(rdev);
 	}
-	
 	sp_asoc_pr_info("Register %s Success!\n", info->desc.name);
 
 	platform_set_drvdata(pdev, rdev);
