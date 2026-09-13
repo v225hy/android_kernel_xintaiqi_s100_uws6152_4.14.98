@@ -1,4 +1,3 @@
 # 适用于鑫泰奇s100 w527的Android kernel
 内核版本4.14.98
-soraneko:喜欢偷我文件的 我直接开源 欢迎适配其他设备
-Auth:我来偷文件(
+集成了kernelsu next，修复一些bug
