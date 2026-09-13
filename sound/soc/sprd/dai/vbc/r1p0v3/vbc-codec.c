@@ -68,6 +68,10 @@ static const u32 vbc_da_eq_profile_default[VBC_DA_EFFECT_PARAS_LEN] = {
 /* TODO the default register value */
 	/* REG_VBC_VBC_DAC_PATH_CTRL */
 	0x00000000,
+	/* REG_VBC_VBC_DAC_HP_CTRL
+	 * ninglei diff bit eq6, alc,
+	 * iis width 24(substitution vbc_da_iis_wd_sel)
+	 */
 	0x00000a7F,
 	/*ALC default para */
 	/* REG_VBC_VBC_DAC_ALC_CTRL0 */
@@ -407,7 +411,7 @@ void vbc_fm_adder(u32 mode, u32 chan)
 {
 	unsigned int bit = BIT_RF_ST_FM_SEL;
 
-	if (!AUDIO_CHAN_CHECK(chan)) {
+	if (AUDIO_CHAN_CHECK(chan) == 0) {
 		pr_err("%s invalid chan %u\n", __func__, chan);
 		return;
 	}
@@ -428,7 +432,7 @@ void vbc_st_adder(u32 mode, u32 chan)
 {
 	unsigned int bit = BIT_RF_ST_FM_SEL;
 
-	if (!AUDIO_CHAN_CHECK(chan)) {
+	if (AUDIO_CHAN_CHECK(chan) == 0) {
 		pr_err("%s invalid chan %u\n", __func__, chan);
 		return;
 	}
@@ -448,7 +452,7 @@ void vbc_st_adder(u32 mode, u32 chan)
 /* must dgmixer enable (DA_DGMIXER in vbc_da_module_enable) */
 static void vbc_da01_set_dgmixer_dg(u32 chan, u32 dg)
 {
-	if (!AUDIO_CHAN_CHECK(chan)) {
+	if (AUDIO_CHAN_CHECK(chan) == 0) {
 		pr_err("%s invalid chan %u\n", __func__, chan);
 		return;
 	}
@@ -467,7 +471,7 @@ static void vbc_da01_set_dgmixer_dg(u32 chan, u32 dg)
 
 static void vbc_da23_set_dgmixer_dg(u32 chan, u32 dg)
 {
-	if (!AUDIO_CHAN_CHECK(chan)) {
+	if (AUDIO_CHAN_CHECK(chan) == 0) {
 		pr_err("%s invalid chan %u\n", __func__, chan);
 		return;
 	}
@@ -540,7 +544,7 @@ static void vbc_mixer_mux_sel(enum VBC_MIXER_ID_E mixer_id, u32 chan,
 	u32 mask = 0;
 	u32 val = 0;
 
-	if (!AUDIO_CHAN_CHECK(chan)) {
+	if (AUDIO_CHAN_CHECK(chan) == 0) {
 		pr_err("%s invalid chan(%u)\n", __func__, chan);
 		return;
 	}
@@ -586,7 +590,7 @@ static void vbc_mixer_out_sel(enum VBC_MIXER_ID_E mixer_id, u32 chan,
 	u32 reg = REG_VBC_VBC_MIXER_CTRL;
 	u32 mask = 0;
 
-	if (!AUDIO_CHAN_CHECK(chan)) {
+	if (AUDIO_CHAN_CHECK(chan) == 0) {
 		pr_err("%s invalid chan(%u)\n", __func__, chan);
 		return;
 	}
@@ -647,7 +651,7 @@ static void vbc_st_chan_sel(u32 id, u32 chan)
 	u32 val = 0;
 	u32 mask = 0;
 
-	if (!AUDIO_CHAN_CHECK(chan)) {
+	if (AUDIO_CHAN_CHECK(chan) == 0) {
 		pr_err("%s invalid chan %u\n", __func__, chan);
 		return;
 	}
@@ -676,7 +680,7 @@ static void vbc_st_data_inmux_sel(u32 mode, u32 chan)
 	u32 val = 0;
 	u32 mask = 0;
 
-	if (!AUDIO_CHAN_CHECK(chan)) {
+	if (AUDIO_CHAN_CHECK(chan) == 0) {
 		pr_err("%s invalid chan %u\n", __func__, chan);
 		return;
 	}
@@ -702,7 +706,7 @@ static void vbc_adc_Inmux_sel(u32 id, u32 path, u32 chan)
 	u32 val = 0;
 	u32 mask = 0;
 
-	if (!AUDIO_CHAN_CHECK(chan)) {
+	if (AUDIO_CHAN_CHECK(chan) == 0) {
 		pr_err("%s invalid chan %u\n", __func__, chan);
 		return;
 	}
@@ -728,9 +732,6 @@ static void vbc_adc_Inmux_sel(u32 id, u32 path, u32 chan)
 			mask |= BITS_RF_ADC3_INMUX_SEL(0x3);
 		}
 		break;
-	default:
-		    pr_err("%s, invalid chan %u\n", __func__, chan);
-		break;
 	}
 	vbc_reg_update(reg, val, mask);
 }
@@ -739,7 +740,7 @@ static void vbc_ad01_data_dgmux_sel(u32 mode, u32 chan)
 {
 	u32 bit;
 
-	if (!AUDIO_CHAN_CHECK(chan)) {
+	if (AUDIO_CHAN_CHECK(chan) == 0) {
 		pr_err("%s invalid chan %u\n", __func__, chan);
 		return;
 	}
@@ -773,7 +774,7 @@ static void vbc_ad23_data_dgmux_sel(u32 mode, u32 chan)
 {
 	u32 bit;
 
-	if (!AUDIO_CHAN_CHECK(chan)) {
+	if (AUDIO_CHAN_CHECK(chan) == 0) {
 		pr_err("%s invalid chan %u\n", __func__, chan);
 		return;
 	}
@@ -1315,6 +1316,7 @@ static int vbc_try_fm_ad_src_set(struct vbc_codec_priv *vbc_codec,
 
 static int vbc_try_da_iismux_set(int port)
 {
+	/* ninglei why port ? (port + 1) : 0 */
 	return vbc_da_iismux_set(port ? (port + 1) : 0);
 }
 
@@ -1403,7 +1405,6 @@ static const char *const ad3_inmux_txt[] = {
 
 #define MUX_TO_CODEC "AUDIIS0"
 #define MUX_TO_DIGFM "DIGFM"
-#define MUX_TO_EXTDIGFM  "EXTDIGFM"
 
 static const char *const ad_iis_txt[] = {
 	MUX_TO_CODEC, MUX_TO_DIGFM, "EXTDIGFM", "EXTIIS6", "AUDIIS1",
@@ -1602,8 +1603,6 @@ static int aud_event(struct snd_soc_dapm_widget *w,
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
 		vbc_eq_idx = vbc_idx_to_eq_idx(vbc_idx);
-		if (vbc_eq_idx < 0)
-			return -EINVAL;
 		/*eq setting */
 		if (!p_eq_setting->codec)
 			p_eq_setting->codec = codec;
@@ -1707,9 +1706,6 @@ static int sprd_vbc_mux_put(struct snd_kcontrol *kcontrol,
 			vbc_codec->ad01_to_fm = false;
 		else if (strcmp(texts->texts[ucontrol->value.integer.value[0]],
 			MUX_TO_DIGFM) == 0)
-			vbc_codec->ad01_to_fm = true;
-		else if (strcmp(texts->texts[ucontrol->value.integer.value[0]],
-			MUX_TO_EXTDIGFM) == 0)
 			vbc_codec->ad01_to_fm = true;
 		else {
 			vbc_codec->ad01_to_fm = false;
@@ -1892,7 +1888,7 @@ static const struct snd_soc_dapm_widget vbc_codec_dapm_widgets[] = {
 static const struct snd_soc_dapm_route vbc_codec_intercon[] = {
 	/************************power********************************/
 	/* digital fm playback need to open DA Clk and DA power */
-	{"DFM", NULL, "VBC Power"},
+	{"DFM", NULL, "VBC Power"},	/*ninglei to check */
 
 	/********************** capture in  path in vbc ********************/
 	/* AD input route */
@@ -1992,14 +1988,9 @@ int vbc_component_startup(int vbc_idx, struct snd_soc_dai *dai)
 		vbc_try_ad_dgmux_set(vbc_codec, ADC3_DGMUX);
 		vbc_mixer_sel_set(vbc_codec, VBC_MIXER_ST);
 		break;
-	default:
-		pr_err("%s, invalid vbc_idx %d\n", __func__, vbc_idx);
-		break;
 	}
 
 	vbc_eq_idx = vbc_idx_to_eq_idx(vbc_idx);
-	if (vbc_eq_idx < 0)
-		return -EINVAL;
 	if (p_eq_setting->is_active[vbc_eq_idx]
 	    && p_eq_setting->data[vbc_eq_idx]) {
 		pr_info("%s line[%d] active vbc_eq_idx[%d]\n",
@@ -2491,7 +2482,7 @@ static void vbc_eq_reg_apply(struct snd_soc_codec *codec, void *data,
 				effect_paras = data;
 			} else {
 				pr_info("%s default eq\n", __func__);
-				effect_paras = (void *)&vbc_da_eq_profile_default;
+				effect_paras = &vbc_da_eq_profile_default;
 			}
 		} else {
 			pr_info("eq6 dynamic eq %s line[%d]\n",
@@ -2514,7 +2505,7 @@ static void vbc_eq_reg_apply(struct snd_soc_codec *codec, void *data,
 			if (val & BIT_RF_DAC_ALC_EN)
 				effect_paras = data;
 			else
-				effect_paras = (void *)&vbc_da_eq_profile_default;
+				effect_paras = &vbc_da_eq_profile_default;
 		}
 		vbc_da_alc_reg_set(effect_paras, vbc_codec);
 
@@ -2549,12 +2540,12 @@ static void vbc_eq_profile_close(struct snd_soc_codec *codec, int vbc_eq_idx)
 	switch (vbc_eq_idx) {
 	case VBC_DA_EQ:
 		vbc_eq_profile_apply(codec,
-				     (void *)&vbc_da_eq_profile_default, vbc_eq_idx);
+				     &vbc_da_eq_profile_default, vbc_eq_idx);
 		break;
 	case VBC_AD01_EQ:
 	case VBC_AD23_EQ:
 		vbc_eq_profile_apply(codec,
-				     (void *)&vbc_ad_eq_profile_default, vbc_eq_idx);
+				     &vbc_ad_eq_profile_default, vbc_eq_idx);
 		break;
 	default:
 		break;
@@ -3007,16 +2998,12 @@ static int vbc_switch_put(struct snd_kcontrol *kcontrol,
 	value = ucontrol->value.integer.value[0];
 
 	if (vbc_switch_reg_val[vbc_codec->vbc_control] != VBC_TO_WTLCP_CTRL) {
-		if (vbc_switch_reg_val[value] == VBC_TO_WTLCP_CTRL) {
-			enable_tuned_clock();
+		if (vbc_switch_reg_val[value] == VBC_TO_WTLCP_CTRL)
 			vbc_eb_set();
-		}
 	} else if (vbc_switch_reg_val[vbc_codec->vbc_control]
 		   == VBC_TO_WTLCP_CTRL) {
-		if (vbc_switch_reg_val[value] == VBC_TO_AP_CTRL) {
+		if (vbc_switch_reg_val[value] == VBC_TO_AP_CTRL)
 			vbc_eb_clear();
-			disable_tuned_clock();
-		}
 	}
 	vbc_codec->vbc_control = value;
 	arch_audio_vbc_switch(vbc_switch_reg_val[value],
@@ -3492,6 +3479,13 @@ int vbc_close_fm_dggain(bool mute)
 						__func__, mute);
 	}
 	mutex_unlock(&g_vbc_codec->fm_mutex);
+
+	/* cut down the dggain of fm input */
+	/* ninglei sharkl bug? REG_VBC_VBC_ADC01_DG_CTRL dg is not for fm,
+	 * you should operate REG_VBC_VBC_DAC_ST_CTL0 dg bits
+	 * and REG_VBC_VBC_DAC_ST_CTL1 dg bits
+	 *return vbc_reg_update(REG_VBC_VBC_ADC01_DG_CTRL, 0x7F7F, 0x7F7F);
+	 */
 
 	return 0;
 }
@@ -3976,7 +3970,6 @@ static int vbc_put_access(struct snd_kcontrol *kcontrol,
 
 	pr_info("%s, cnt=%d, enable=%d",
 		__func__, vbc_codec->vbc_access_en, enable);
-	mutex_lock(&vbc_codec->access_mutex);
 	if (enable) {
 		if (vbc_codec->vbc_access_en == 0)
 			vbc_eb_set();
@@ -3986,7 +3979,6 @@ static int vbc_put_access(struct snd_kcontrol *kcontrol,
 			vbc_eb_clear();
 		vbc_codec->vbc_access_en = 0;
 	}
-	mutex_unlock(&vbc_codec->access_mutex);
 
 	return true;
 }
@@ -4612,7 +4604,6 @@ static int sprd_vbc_codec_probe(struct platform_device *pdev)
 	vbc_codec->dgmixerstep_da23 = 1;
 	vbc_codec->fm_mutedg_step = 1;
 	mutex_init(&vbc_codec->load_mutex);
-	mutex_init(&vbc_codec->access_mutex);
 	wakeup_source_init(&vbc_codec->wake_lock,
 		"vbc-eq-loading");
 	spin_lock_init(&(vbc_codec->lock_eq_idx));

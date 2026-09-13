@@ -19,7 +19,4 @@
 
 #include "vbc-comm.h"
 
-extern void enable_tuned_clock(void);
-extern void disable_tuned_clock(void);
-
 #endif /* __VBC_CODEC_H */

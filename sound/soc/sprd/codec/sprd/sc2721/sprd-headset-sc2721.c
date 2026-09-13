@@ -48,8 +48,8 @@
  * about 50ms. So the trigger settings must be located
  * in headset_irq_xx_handler().
  */
-#define FOR_EIC_CHANGE_DET
-#define FOR_EIC_CHANGE_BUTTON
+#define FOR_EIC_CHANGE_DET /* peng.lee debug for eic change */
+#define FOR_EIC_CHANGE_BUTTON /* peng.lee debug for eic change */
 
 #define EIC_AUD_HEAD_INST2 312
 #define MAX_BUTTON_NUM 6
@@ -65,6 +65,12 @@
 #define ADC_READ_COUNT (2)
 #define ADC_READ_LOOP (2)
 #define CHIP_ID_2720 0x2720
+/*
+ * acoording asic(chen.si)
+ * asci has made 2 average adc sample for 2721,
+ * so we can change adc sapmle from 20 to 10.
+ *
+ */
 #define SCI_ADC_GET_VALUE_COUNT (10)
 
 #define ABS(x) (((x) < (0)) ? (-(x)) : (x))
@@ -82,8 +88,6 @@
 #define headset_reg_set_bits(reg, bits) \
 	sci_adi_set(CODEC_REG((reg)), (bits))
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
 int dsp_fm_mute_by_set_dg(void)
 	__attribute__ ((weak, alias("__dsp_fm_mute_by_set_dg")));
 
@@ -92,7 +96,6 @@ static int __dsp_fm_mute_by_set_dg(void)
 	pr_err("ERR: dsp_fm_mute_by_set_dg is not defined!\n");
 	return -1;
 }
-#pragma GCC diagnostic pop
 
 static inline int headset_reg_get_bits(unsigned int reg, int bits)
 {
@@ -139,8 +142,6 @@ static bool fast_charge_finished;
 
 /* ========================  audio codec  ======================== */
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
 int vbc_close_fm_dggain(bool mute)
 	__attribute__ ((weak, alias("__vbc_close_fm_dggain")));
 static int __vbc_close_fm_dggain(bool mute)
@@ -148,7 +149,6 @@ static int __vbc_close_fm_dggain(bool mute)
 	pr_err("ERR: vbc_close_fm_dggain is not defined!\n");
 	return -1;
 }
-#pragma GCC diagnostic pop
 
 /* When remove headphone, disconnect the headphone
  * dapm DA path in codec driver.
@@ -183,9 +183,7 @@ static int dapm_jack_switch_control(struct snd_soc_codec *codec, bool on)
 static void headset_jack_report(struct sprd_headset *hdst,
 	struct snd_soc_jack *jack, int status, int mask)
 {
-	struct sprd_headset_platform_data *pdata = &hdst->pdata;
-
-	if (mask & SND_JACK_HEADPHONE && (!pdata->hpr_spk))
+	if (mask & SND_JACK_HEADPHONE)
 		dapm_jack_switch_control(hdst->codec, !!status);
 
 	snd_soc_jack_report(jack, status, mask);
@@ -930,6 +928,10 @@ static int headset_get_adc_average(struct iio_channel *chan,
 	}
 	/* ================= debug ===================== */
 
+	/*
+	 * we can should confirm 2-4ms delay before read adc(from si.chen),
+	 * and we can only compare one time based on this delay
+	 */
 	usleep_range(2000, 4000);
 	for (i = 0; i < ADC_READ_LOOP; i++) {
 		if (gpio_get_value(gpio_num) != gpio_value) {
@@ -1050,7 +1052,7 @@ static int headset_gpio_2_button_state(int gpio_button_value_current)
 	return button_state_current; /* 0==released, 1==pressed */
 }
 
-static int headset_adc_get_ideal(u32 adc_mic, u32 coefficient, bool big_scale);
+static int headset_adc_get_ideal(u32 adc_mic, u32 coefficient);
 /* summer: softflow  limit the read adc time */
 
 #if 0
@@ -1167,7 +1169,7 @@ retry_again:
 	pr_info("now get adc value of headmic in big scale\n");
 	/* set large scale */
 	headset_scale_set(1);
-	ret = iio_write_channel_attribute(adc_chan, 0, 0, IIO_CHAN_INFO_SCALE);
+	ret = iio_write_channel_attribute(adc_chan, 1, 0, IIO_CHAN_INFO_SCALE);
 	if (!ret)
 		pr_err("%s set channel attribute big failed!\n", __func__);
 
@@ -1175,7 +1177,7 @@ retry_again:
 	sprd_msleep(10);
 	adc_mic_average = headset_get_adc_value(adc_chan);
 	adc_mic_average = headset_adc_get_ideal(adc_mic_average,
-						pdata->coefficient, true);
+						pdata->coefficient);
 	if ((adc_mic_average > pdata->sprd_stable_value) ||
 					(adc_mic_average == -1)) {
 		if (retry_times < 10) {
@@ -1185,6 +1187,7 @@ retry_again:
 				retry_times, adc_mic_average);
 			goto  retry_again;
 		}
+		return HEADSET_TYPE_ERR;
 	}
 	pr_info("adc_mic_average = %d\n", adc_mic_average);
 
@@ -1201,15 +1204,8 @@ retry_again:
 	msleep(20);
 	adc_left_average = headset_get_adc_value(adc_chan);
 	pr_info("adc_left_average = %d\n", adc_left_average);
-	if (adc_left_average < 0)
+	if (-1 == adc_left_average)
 		return HEADSET_TYPE_ERR;
-
-	if (retry_times >= 10) {
-		if (adc_left_average < pdata->sprd_one_half_adc_gnd)
-			return HEADSET_NO_MIC;
-		if (adc_left_average >= pdata->sprd_one_half_adc_gnd)
-			return HEADSET_TYPE_ERR;
-	}
 
 	/* Get adc value of headmic in. */
 	headset_set_adc_to_headmic(1);
@@ -1217,7 +1213,7 @@ retry_again:
 	pr_info("adc_mic_average = %d\n", adc_mic_average);
 
 	adc_mic_ideal = headset_adc_get_ideal(adc_mic_average,
-						pdata->coefficient, false);
+						pdata->coefficient);
 	if (adc_mic_ideal >= 0)
 		adc_mic_average = adc_mic_ideal;
 
@@ -1244,6 +1240,8 @@ retry_again:
 		return HEADSET_4POLE_NOT_NORMAL;
 	else
 		return HEADSET_TYPE_ERR;
+
+	return HEADSET_TYPE_ERR;
 }
 
 static void headset_button_release_verify(void)
@@ -1339,7 +1337,7 @@ static void headset_button_work_func(struct work_struct *work)
 				goto out;
 			}
 			adc_ideal = headset_adc_get_ideal(adc_mic_average,
-						pdata->coefficient, false);
+						pdata->coefficient);
 			pr_info("adc_mic_average=%d, adc_ideal=%d\n",
 				adc_mic_average, adc_ideal);
 			if (adc_ideal >= 0)
@@ -1437,11 +1435,9 @@ int headset_fast_charge_finished(void)
 
 static void headset_fast_charge(struct sprd_headset *hdst)
 {
-	struct sprd_headset_platform_data *pdata = &hdst->pdata;
 	unsigned int mask = ~0u & ~(BIT(DAS_EN) | BIT(PA_EN));
 
-	if (!pdata->hpr_spk)
-		headset_reg_clr_bits(ANA_CDC2, mask);
+	headset_reg_clr_bits(ANA_CDC2, mask);
 	headset_reg_set_bits(ANA_STS2, BIT(CALDC_ENO));
 	headset_reg_set_bits(ANA_STS0, BIT(DC_CALI_RDACI_ADJ));
 	usleep_range(1000, 1100); /* Wait for 1mS */
@@ -1878,7 +1874,7 @@ static irqreturn_t headset_detect_all_irq_handler(int irq, void *dev)
 
 	headset_reg_read(ANA_STS2, &val);
 	pr_info("ANA_STS2 %#x\n", val);
-#ifdef FOR_EIC_CHANGE_DET
+#ifdef FOR_EIC_CHANGE_DET /* peng.lee debug eic change */
 	if (pdata->jack_type != JACK_TYPE_NC) {
 		if (hdst->gpio_det_val_last == 1) {
 			if (pdata->irq_trigger_levels[HDST_GPIO_DET_ALL] == 1)
@@ -2391,11 +2387,6 @@ static int sprd_headset_parse_dt(struct sprd_headset *hdst)
 	}
 	pdata->jack_type = val ? JACK_TYPE_NC : JACK_TYPE_NO;
 
-	/* Parse configs for whether speaker use headset path. */
-	pdata->hpr_spk = of_property_read_bool(np, "sprd,spk-route-hp");
-	if (!pdata->hpr_spk)
-		pr_warn("%s speaker not use headset path\n", __func__);
-
 	/* Parse gpios. */
 	/* Parse for the gpio of EU/US jack type switch. */
 	index = of_property_match_string(np, "gpio-names", "switch");
@@ -2658,10 +2649,10 @@ static int sprd_headset_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int headset_adc_get_ideal(u32 adc_mic, u32 coefficient, bool big_scale)
+static int headset_adc_get_ideal(u32 adc_mic, u32 coefficient)
 {
-	u64 numerator = 0;
-	u64 denominator = 0;
+	int64_t numerator = 0;
+	int64_t denominator = 0;
 	u32 adc_ideal = 0;
 	u32 a, b, e1, e2;
 	int64_t exp1, exp2, exp3, exp4;
@@ -2689,10 +2680,7 @@ static int headset_adc_get_ideal(u32 adc_mic, u32 coefficient, bool big_scale)
 
 	pr_debug("exp1=%lld, exp2=%lld, exp3=%lld, exp4=%lld\n",
 		exp1, exp2, exp3, exp4);
-	if (big_scale)
-		denominator = exp3 + 4 * exp4;
-	else
-		denominator = exp3 + exp4;
+	denominator = exp3 + exp4;
 	numerator = coefficient * (exp1 + 1200) * exp2;
 	pr_debug("denominator=%lld, numerator=%lld\n",
 			denominator, numerator);
@@ -2710,7 +2698,7 @@ static int headset_adc_get_ideal(u32 adc_mic, u32 coefficient, bool big_scale)
 			denominator, numerator);
 
 	divisor = (u32)(denominator);
-	dividend = numerator;
+	dividend = (u64)(numerator);
 	pr_info("divisor=%u, dividend=%llu\n", divisor, dividend);
 
 	do_div(dividend, divisor);

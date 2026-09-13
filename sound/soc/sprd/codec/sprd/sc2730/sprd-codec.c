@@ -17,7 +17,6 @@
 #include "sprd-asoc-debug.h"
 #define pr_fmt(fmt) pr_sprd_fmt("SC2730")""fmt
 
-
 #include <linux/atomic.h>
 #include <linux/completion.h>
 #include <linux/delay.h>
@@ -119,31 +118,11 @@ static const char *sprd_codec_chan_name[SPRD_CODEC_CHAN_MAX] = {
 	"ADC1",
 };
 
-enum IVSENCE_DMIC_TYPE {
-	NONE,
-	DMIC0,
-	DMIC1,
-	DMIC0_1,
-	DMIC_TYPE_MAX
-};
-
-static const char * const ivsence_dmic_type_txt[DMIC_TYPE_MAX] = {
-	[NONE] = TO_STRING(NONE),
-	[DMIC0] = TO_STRING(DMIC0),
-	[DMIC1] = TO_STRING(DMIC1),
-	[DMIC0_1] = TO_STRING(DMIC0_1),
-};
-
-static const struct soc_enum ivsence_dmic_sel_enum =
-	SOC_ENUM_SINGLE_EXT(4, ivsence_dmic_type_txt);
-
 static inline const char *sprd_codec_chan_get_name(int chan_id)
 {
 	return sprd_codec_chan_name[chan_id];
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
 int agdsp_access_enable(void)
 	__attribute__ ((weak, alias("__agdsp_access_enable")));
 static int __agdsp_access_enable(void)
@@ -159,7 +138,6 @@ static int __agdsp_access_disable(void)
 	pr_debug("%s\n", __func__);
 	return 0;
 }
-#pragma GCC diagnostic pop
 
 struct inter_pa {
 	/* FIXME little endian */
@@ -258,7 +236,6 @@ struct sprd_codec_priv {
 	struct mutex dig_access_mutex;
 	bool dig_access_en;
 	bool user_dig_access_dis;
-	enum IVSENCE_DMIC_TYPE ivsence_dmic_type;
 };
 
 
@@ -425,9 +402,6 @@ static const struct snd_kcontrol_new virt_output_switch =
 	SOC_DAPM_SINGLE_VIRT("Switch", 1);
 
 static const struct snd_kcontrol_new ivsence_switch =
-	SOC_DAPM_SINGLE_VIRT("Switch", 1);
-
-static const struct snd_kcontrol_new hpr_pin_switch =
 	SOC_DAPM_SINGLE_VIRT("Switch", 1);
 
 static const struct snd_kcontrol_new aud_adc_switch[] = {
@@ -750,6 +724,14 @@ static void update_switch(struct snd_soc_codec *codec, u32 path, u32 on)
 
 static inline void sprd_codec_vcm_v_sel(struct snd_soc_codec *codec, int v_sel)
 {
+/* yintang marked for compiling.
+ * int mask;
+ * int val;
+ * sp_asoc_pr_dbg("VCM Set %d\n", v_sel);
+ * mask = VB_V_MASK << VB_V;
+ * val = (v_sel << VB_V) & mask;
+ * snd_soc_update_bits(codec, SOC_REG(ANA_PMU1), mask, val);
+ */
 }
 
 /* das dc offset setting */
@@ -1063,6 +1045,7 @@ static void spk_pa_short_check(struct sprd_codec_priv *sprd_codec)
 
 	val = snd_soc_read(codec, SOC_REG(ANA_STS14)) | IMPD_ADC_DATO(0xFFFF);
 
+	/* yintang: TBD. calculate the impd per the val */
 #endif
 }
 
@@ -1396,6 +1379,7 @@ static int sprd_codec_digital_open(struct snd_soc_codec *codec)
 
 	sprd_codec_sdm_init(codec);
 
+	/*peng.lee added this according to janus.li's email*/
 	snd_soc_update_bits(codec, SOC_REG(AUD_SDM_CTL0), 0xFFFF, 0);
 
 	/* Set the left/right clock selection. */
@@ -1409,16 +1393,10 @@ static int sprd_codec_digital_open(struct snd_soc_codec *codec)
 		snd_soc_update_bits(codec, SOC_REG(AUD_ADC1_I2S_CTL),
 			BIT(ADC1_LR_SEL), BIT(ADC1_LR_SEL));
 
-	/*
-	 * temporay method to disable DNS, waiting ASIC to improve
-	 * this feature
-	 */
-	snd_soc_update_bits(codec, SOC_REG(AUD_DNS_AUTOGATE_EN), 0xffff,
-			    0x3303);
-	snd_soc_update_bits(codec, SOC_REG(AUD_DNS_SW), BIT(RG_DNS_SW), 0);
 	return ret;
 }
 
+/*yintang marked for compiling*/
 #ifdef SPRD_CODEC_TBD
 static void sprd_codec_irq_oxp_enable(struct snd_soc_codec *codec)
 {
@@ -1489,6 +1467,7 @@ static int digital_power_event(struct snd_soc_dapm_widget *w,
 		mutex_unlock(&sprd_codec->dig_access_mutex);
 
 		codec_digital_reg_enable(codec);
+		arch_audio_codec_digital_reset();
 		sprd_codec_digital_open(codec);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
@@ -2452,11 +2431,6 @@ static const struct snd_soc_dapm_widget sprd_codec_dapm_widgets[] = {
 		0, 0,
 		chan_event,
 		SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_ADC_E("Capture RECOGNISE", "Capture-DSP-RECOGNISE",
-		FUN_REG(SPRD_CODEC_CAPTRUE),
-		0, 0,
-		chan_event,
-		SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 /* DA route */
 	SND_SOC_DAPM_DAC_E("DAC", "Normal-Playback-AP01",
 		FUN_REG(SPRD_CODEC_PLAYBACK), 0,
@@ -2651,8 +2625,6 @@ static const struct snd_soc_dapm_widget sprd_codec_dapm_widgets[] = {
 	 */
 	SND_SOC_DAPM_SWITCH("HP", SND_SOC_NOPM,
 			0, 0, &hp_jack_switch),
-	SND_SOC_DAPM_SWITCH("HPR Pin", SND_SOC_NOPM,
-			0, 0, &hpr_pin_switch),
 
 	SND_SOC_DAPM_MUX("Digital ADC In Sel", SND_SOC_NOPM, 0, 0,
 			 &dig_adc_in_sel),
@@ -2756,9 +2728,8 @@ static const struct snd_soc_dapm_route sprd_codec_intercon[] = {
 	{"HPR Switch", NULL, "HP BUF Switch"},
 	{"HPL Gain", NULL, "HPL Switch"},
 	{"HPR Gain", NULL, "HPR Switch"},
-	{"HPR Pin", "Switch", "HPR Gain"},
 	{"HP Pin", NULL, "HPL Gain"},
-	{"HP Pin", NULL, "HPR Pin"},
+	{"HP Pin", NULL, "HPR Gain"},
 
 /* EAR */
 	{"RCV DEPOP", NULL, "CP"},
@@ -2806,8 +2777,6 @@ static const struct snd_soc_dapm_route sprd_codec_intercon[] = {
 	{"ADC DSP_C_fm_test", NULL, "AUD ADC0R"},
 	{"ADC Voice", NULL, "AUD ADC0L"},
 	{"ADC Voice", NULL, "AUD ADC0R"},
-	{"Capture RECOGNISE", NULL, "AUD ADC0L"},
-	{"Capture RECOGNISE", NULL, "AUD ADC0R"},
 	{"ADC Voip", NULL, "AUD ADC0L"},
 	{"ADC Voip", NULL, "AUD ADC0R"},
 	{"ADC CODEC_TEST", NULL, "AUD ADC0L"},
@@ -2830,8 +2799,6 @@ static const struct snd_soc_dapm_route sprd_codec_intercon[] = {
 	{"ADC DSP_C_fm_test", NULL, "AUD ADC1R"},
 	{"ADC Voice", NULL, "AUD ADC1L"},
 	{"ADC Voice", NULL, "AUD ADC1R"},
-	{"Capture RECOGNISE", NULL, "AUD ADC1L"},
-	{"Capture RECOGNISE", NULL, "AUD ADC1R"},
 	{"ADC Voip", NULL, "AUD ADC1L"},
 	{"ADC Voip", NULL, "AUD ADC1R"},
 	{"ADC CODEC_TEST", NULL, "AUD ADC1L"},
@@ -2852,7 +2819,6 @@ static const struct snd_soc_dapm_route sprd_codec_intercon[] = {
 	{"ADC DSP_C_btsco_test", NULL, "CLK_ADC"},
 	{"ADC DSP_C_fm_test", NULL, "CLK_ADC"},
 	{"ADC Voice", NULL, "CLK_ADC"},
-	{"Capture RECOGNISE", NULL, "CLK_ADC"},
 	{"ADC Voip", NULL, "CLK_ADC"},
 	{"ADC CODEC_TEST", NULL, "CLK_ADC"},
 	{"ADC LOOP", NULL, "CLK_ADC"},
@@ -3205,37 +3171,6 @@ static int sprd_codec_spk_dg_fall_set(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-static int sprd_codec_ivsence_dmic_get(struct snd_kcontrol *kcontrol,
-			     struct snd_ctl_elem_value *ucontrol)
-{
-	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
-	struct sprd_codec_priv *sprd_codec = snd_soc_codec_get_drvdata(codec);
-
-	ucontrol->value.integer.value[0] = sprd_codec->ivsence_dmic_type;
-
-	return 0;
-}
-
-static int sprd_codec_ivsence_dmic_put(struct snd_kcontrol *kcontrol,
-			     struct snd_ctl_elem_value *ucontrol)
-{
-	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
-	struct sprd_codec_priv *sprd_codec = snd_soc_codec_get_drvdata(codec);
-	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
-	int val;
-
-	val = ucontrol->value.integer.value[0];
-	if (val >= e->items || val < 0) {
-		pr_err("ERR: %s,index outof bounds error\n", __func__);
-		return -EINVAL;
-	}
-
-	sp_asoc_pr_info("%s using %s, val %d\n", __func__, e->texts[val], val);
-	sprd_codec->ivsence_dmic_type = val;
-
-	return 0;
-}
-
 static const struct snd_kcontrol_new sprd_codec_snd_controls[] = {
 
 	SOC_ENUM_EXT("Aud Codec Info", codec_info_enum,
@@ -3261,9 +3196,6 @@ static const struct snd_kcontrol_new sprd_codec_snd_controls[] = {
 		sprd_codec_fixed_rate_get, sprd_codec_fixed_rate_put),
 	SOC_SINGLE_EXT("Codec Digital Access Disable", SND_SOC_NOPM, 0, 1, 0,
 		dig_access_disable_get, dig_access_disable_put),
-	SOC_ENUM_EXT("IVSENCE_DMIC_SEL", ivsence_dmic_sel_enum,
-		sprd_codec_ivsence_dmic_get,
-		sprd_codec_ivsence_dmic_put),
 };
 
 static unsigned int sprd_codec_read(struct snd_soc_codec *codec,
@@ -3363,31 +3295,8 @@ static int sprd_codec_pcm_hw_params(struct snd_pcm_substream *substream,
 			fixed_rate[CODEC_PATH_DA] : rate;
 		sprd_codec_set_sample_rate(codec,
 			sprd_codec->da_sample_val, mask, shift);
-		sp_asoc_pr_info("Playback rate is [%u], ivsence_dmic_type %d\n",
-			sprd_codec->da_sample_val,
-			sprd_codec->ivsence_dmic_type);
-
-		switch (sprd_codec->ivsence_dmic_type) {
-		case DMIC0:
-			sprd_codec->ad_sample_val =
-				fixed_rate[CODEC_PATH_AD] ?
-				fixed_rate[CODEC_PATH_AD] : rate;
-			sprd_codec_set_ad_sample_rate(codec,
-				sprd_codec->ad_sample_val, mask, shift);
-			break;
-		case DMIC1:
-			sprd_codec->ad1_sample_val =
-				fixed_rate[CODEC_PATH_AD1] ?
-				fixed_rate[CODEC_PATH_AD1] : rate;
-			sprd_codec_set_ad_sample_rate(codec,
-				sprd_codec->ad1_sample_val,
-				ADC1_SRC_N_MASK, ADC1_SRC_N);
-			break;
-		case DMIC0_1:
-		case NONE:
-		default:
-			sp_asoc_pr_dbg("%s to do nothing\n", __func__);
-			}
+		sp_asoc_pr_info("Playback rate is [%u]\n",
+			sprd_codec->da_sample_val);
 	} else {
 		sprd_codec->ad_sample_val = fixed_rate[CODEC_PATH_AD] ?
 			fixed_rate[CODEC_PATH_AD] : rate;
@@ -3484,17 +3393,12 @@ static void pa_short_stat_proc_read(struct snd_info_entry *entry,
 		sprd_codec->cp_short_stat, sprd_codec->pa_short_stat);
 }
 
-#define CANNEL_DUMP_CODEC_REG 0
 static void sprd_codec_proc_read(struct snd_info_entry *entry,
 				 struct snd_info_buffer *buffer)
 {
 	struct sprd_codec_priv *sprd_codec = entry->private_data;
 	struct snd_soc_codec *codec = sprd_codec->codec;
 	int reg, ret;
-
-    #if CANNEL_DUMP_CODEC_REG
-    return;
-    #endif
 
 	ret = agdsp_access_enable();
 	if (ret) {
@@ -3857,19 +3761,6 @@ static struct snd_soc_dai_driver sprd_codec_dai[] = {
 		},
 		.ops = &sprd_codec_dai_ops,
 	},
-
-	/* 15: CAPTURE_DSP_RECOGNISE */
-	{
-		.name = "sprd-codec-capture-dsp-recognise",
-		.capture = {
-			.stream_name = "Capture-DSP-RECOGNISE",
-			.channels_min = 1,
-			.channels_max = 2,
-			.rates = SPRD_CODEC_PCM_AD_RATES,
-			.formats = SPRD_CODEC_PCM_FATMATS,
-		},
-		.ops = &sprd_codec_dai_ops,
-	},
 };
 
 static void codec_reconfig_dai_rate(struct snd_soc_codec *codec)
@@ -3938,7 +3829,6 @@ static int sprd_codec_soc_probe(struct snd_soc_codec *codec)
 	snd_soc_dapm_ignore_suspend(dapm, "Fm-Playback");
 	snd_soc_dapm_ignore_suspend(dapm, "Voice-Playback");
 	snd_soc_dapm_ignore_suspend(dapm, "Voice-Capture");
-	snd_soc_dapm_ignore_suspend(dapm, "Capture-DSP-RECOGNISE");
 
 	/*
 	 * Even without headset driver, codec could work well.
@@ -4191,6 +4081,7 @@ static int sprd_codec_ana_probe(struct platform_device *pdev)
 	/* Set global register accessing vars for headset. */
 	glb_vars.regmap = adi_rgmp;
 	glb_vars.codec_reg_offset = val;
+	/* yintang: marked for compiling */
 	sprd_headset_set_global_variables(&glb_vars);
 
 	/* Parsing configurations varying as machine. */

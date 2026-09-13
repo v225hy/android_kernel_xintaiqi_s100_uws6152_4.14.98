@@ -226,8 +226,6 @@ struct sprd_codec_mixer {
 	sprd_codec_mixer_set set;
 };
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
 int xtlbuf1_eb_set(void)
 __attribute__ ((weak, alias("__xtlbuf1_eb_set")));
 
@@ -271,7 +269,6 @@ static int __agdsp_access_disable(void)
 	pr_debug("%s\n", __func__);
 	return 0;
 }
-#pragma GCC diagnostic pop
 
 struct sprd_codec_ldo_v_map {
 	int ldo_v_level;
@@ -1360,6 +1357,7 @@ static int sprd_codec_ldo_on(struct sprd_codec_priv *sprd_codec)
 	atomic_inc(&sprd_codec->ldo_refcount);
 	if (atomic_read(&sprd_codec->ldo_refcount) == 1) {
 		sp_asoc_pr_dbg("LDO ON!\n");
+		/* peng: why do we disable hmic_bias sleep here? */
 		if (*regu)
 			regulator_set_mode(*regu, REGULATOR_MODE_NORMAL);
 		arch_audio_codec_analog_enable();
@@ -1422,6 +1420,7 @@ static int sprd_codec_digital_open(struct snd_soc_codec *codec)
 	snd_soc_update_bits(codec, SOC_REG(AUD_DAC_SDM_L), 0xFFFF, 0X9999);
 	snd_soc_update_bits(codec, SOC_REG(AUD_DAC_SDM_H), 0xFF, 0x1);
 
+	/*peng.lee added this according to janus.li's email*/
 	snd_soc_update_bits(codec, SOC_REG(AUD_SDM_CTL0), 0xFFFF, 0);
 
 	/* Set the left/right clock selection. */
@@ -1901,10 +1900,7 @@ static int sprd_codec_charge_ext_cap(struct snd_soc_codec *codec)
 	snd_soc_update_bits(codec, SOC_REG(ANA_STS2), BIT(DEPOP_CHG_START),
 			    BIT(DEPOP_CHG_START));
 
-	if (headset_get_plug_state() != 1)
-		return 0;
-
-	/* Waiting for charging finish. only headset plug in need to waiting */
+	/* Waiting for charging finish. */
 	cnt = WAIT_CNT_CHG_CAP;
 	do {
 		val = snd_soc_read(codec, SOC_REG(ANA_STS2));
@@ -1965,10 +1961,7 @@ static int hp_drv_path_switch_event(struct snd_soc_dapm_widget *w,
 		      SPRD_CODEC_HP_MIXER_MAX, SPRD_CODEC_RIGHT,
 		       on, 0);
 
-	/* Wait for RDAC status  only headset plug in need to waiting */
-	if (headset_get_plug_state() != 1)
-		return 0;
-
+	/* Wait for RDAC status */
 	while (--cnt) {
 		val = snd_soc_read(codec, SOC_REG(ANA_DCL5));
 		pr_debug("ANA_DCL5: %#x\n", val);
@@ -2805,11 +2798,10 @@ static int codec_hp_dc_cal(struct snd_soc_codec *codec)
 
 	snd_soc_update_bits(codec, SOC_REG(ANA_DCL0), BIT(DPOP_AUTO_RST), 0);
 
-	if (headset_get_plug_state() == 1) {
-		cnt = 10;
-		while (!headset_fast_charge_finished() && cnt--)
-			sprd_codec_wait(5);
-	}
+	cnt = 10;
+	while (!headset_fast_charge_finished() && cnt--)
+		sprd_codec_wait(5);
+
 	snd_soc_update_bits(codec, SOC_REG(ANA_CDC2),
 			    BIT(HPBUF_EN), BIT(HPBUF_EN));
 	mask = BIT(CALDC_ENO) | BIT(CALDC_EN);
@@ -2833,27 +2825,25 @@ static int codec_hp_dc_cal(struct snd_soc_codec *codec)
 	/* Waiting for DCCAL process finish.
 	 * Twice read for anti-glitch.
 	 */
-	if (headset_get_plug_state() == 1) {
-		cnt = WAIT_CNT_DCCAL;
-		do {
+	cnt = WAIT_CNT_DCCAL;
+	do {
+		val = snd_soc_read(codec, SOC_REG(ANA_STS2));
+		pr_debug("1st ANA_STS2: %#x\n", val);
+		if ((val & BIT(DCCAL_STS)) && (val & BIT(HP_DPOP_DVLD))) {
+			sprd_codec_wait(5);
 			val = snd_soc_read(codec, SOC_REG(ANA_STS2));
-			pr_debug("1st ANA_STS2: %#x\n", val);
-			if ((val & BIT(DCCAL_STS)) && (val & BIT(HP_DPOP_DVLD))) {
-				sprd_codec_wait(5);
-				val = snd_soc_read(codec, SOC_REG(ANA_STS2));
-				pr_debug("2nd ANA_STS2: %#x\n", val);
-				if ((val & BIT(DCCAL_STS)) && (val & BIT(HP_DPOP_DVLD)))
-					break;
-			}
-			sprd_codec_wait(15);
-		} while (--cnt);
-		if (!cnt) {
-			ret = -1;
-			pr_err("%s, waiting for DCCAL finish timeout!\n", __func__);
+			pr_debug("2nd ANA_STS2: %#x\n", val);
+			if ((val & BIT(DCCAL_STS)) && (val & BIT(HP_DPOP_DVLD)))
+				break;
 		}
-		pr_debug("DC-CAL takes about %dms. cnt: %d\n",
-		 (WAIT_CNT_DCCAL - cnt) * 15 + (cnt ? 5 : 0), cnt);
+		sprd_codec_wait(15);
+	} while (--cnt);
+	if (!cnt) {
+		ret = -1;
+		pr_err("%s, waiting for DCCAL finish timeout!\n", __func__);
 	}
+	pr_debug("DC-CAL takes about %dms. cnt: %d\n",
+		 (WAIT_CNT_DCCAL - cnt) * 15 + (cnt ? 5 : 0), cnt);
 
 	mask = ~0u & ~(BIT(DAS_EN) | BIT(PA_EN));
 	snd_soc_update_bits(codec, SOC_REG(ANA_CDC2), mask, 0);
@@ -3198,14 +3188,15 @@ static const struct snd_soc_dapm_widget sprd_codec_dapm_widgets[] = {
 
 	SND_SOC_DAPM_INPUT("DMIC"),
 	SND_SOC_DAPM_INPUT("DMIC1"),
+	SND_SOC_DAPM_OUTPUT("EAR"),
 
-	SND_SOC_DAPM_OUTPUT("EAR Pin"),
-	SND_SOC_DAPM_OUTPUT("HP Pin"),
-	SND_SOC_DAPM_OUTPUT("SPK Pin"),
+	SND_SOC_DAPM_OUTPUT("HP PA"),
+	SND_SOC_DAPM_OUTPUT("Spk PA"),
+	SND_SOC_DAPM_OUTPUT("Spk2 PA"),
 
-	SND_SOC_DAPM_INPUT("MIC Pin"),
-	SND_SOC_DAPM_INPUT("MIC2 Pin"),
-	SND_SOC_DAPM_INPUT("HPMIC Pin"),
+	SND_SOC_DAPM_INPUT("MIC"),
+	SND_SOC_DAPM_INPUT("AUXMIC"),
+	SND_SOC_DAPM_INPUT("HPMIC"),
 
 	/* In sc2721, no such outputs. However, define them here for mute
 	 * function, like "Speaker Mute" and "HeadPhone Mute" in the
@@ -3322,12 +3313,12 @@ static const struct snd_soc_dapm_route sprd_codec_intercon[] = {
 	{"HP BUF Switch", NULL, "DALR DC Offset"},
 	{"HPL EAR Sel2", NULL, "HP BUF Switch"},
 	{"HPL Switch", "HPL", "HPL EAR Sel2"},
-	{"HPR Switch", "HPL", "HPL EAR Sel2"},
+	{"HPR Switch", NULL, "HP BUF Switch"},
 	{"HPL Gain", NULL, "HPL Switch"},
 	{"HPR Gain", NULL, "HPR Switch"},
 	{"Virt HP Jack", "Switch", "HPL Gain"},
 	{"Virt HP Jack", "Switch", "HPR Gain"},
-	{"HP Pin", NULL, "Virt HP Jack"},
+	{"HP PA", NULL, "Virt HP Jack"},
 
 	{"SPKL Mixer", "DACLSPKL Switch", "DACS Switch"},
 
@@ -3346,7 +3337,7 @@ static const struct snd_soc_dapm_route sprd_codec_intercon[] = {
 	{"SPKR Switch", NULL, "SPKR Mixer"},
 	{"SPKL Gain", NULL, "SPKL Switch"},
 
-	{"SPK Pin", NULL, "Spk PA Switch"},
+	{"Spk PA", NULL, "Spk PA Switch"},
 	{"Spk PA Switch", NULL, "SPKL Gain"},
 	{"Spk PA Switch", NULL, "PA Short Check"},
 
@@ -3355,7 +3346,7 @@ static const struct snd_soc_dapm_route sprd_codec_intercon[] = {
 	{"DALR DC Offset", NULL, "EAR Drv Path Switch"},
 	{"EAR Switch", "EAR", "HPL EAR Sel2"},
 	{"EAR Gain", NULL, "EAR Switch"},
-	{"EAR Pin", NULL, "EAR Gain"},
+	{"EAR", NULL, "EAR Gain"},
 
 	{"ADCL Mute", NULL, "ADCL Mixer"},
 	{"ADCR Mute", NULL, "ADCR Mixer"},
@@ -3389,9 +3380,9 @@ static const struct snd_soc_dapm_route sprd_codec_intercon[] = {
 	{"ADC1 Ext", NULL, "Digital ADC1L Switch"},
 	{"ADC1 Ext", NULL, "Digital ADC1R Switch"},
 
-	{"Mic Bias", NULL, "MIC Pin"},
-	{"Mic Bias", NULL, "MIC2 Pin"},
-	{"HeadMic Bias", NULL, "HPMIC Pin"},
+	{"Mic Bias", NULL, "MIC"},
+	{"Mic Bias", NULL, "AUXMIC"},
+	{"HeadMic Bias", NULL, "HPMIC"},
 
 	/* DMIC0 */
 	{"DMIC Switch", NULL, "DMIC"},
@@ -4709,12 +4700,6 @@ static int sprd_codec_soc_probe(struct snd_soc_codec *codec)
 	sprd_codec_proc_init(sprd_codec);
 
 	sprd_codec_audio_ldo(sprd_codec);
-
-	snd_soc_dapm_ignore_suspend(dapm, "Offload-Playback");
-	snd_soc_dapm_ignore_suspend(dapm, "Fm-Playback");
-	snd_soc_dapm_ignore_suspend(dapm, "Voice-Playback");
-	snd_soc_dapm_ignore_suspend(dapm, "Voice-Capture");
-	snd_soc_dapm_ignore_suspend(dapm, "Virt Output Pin");
 
 	/*
 	 * Even without headset driver, codec could work well.

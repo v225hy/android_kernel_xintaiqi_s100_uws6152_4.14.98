@@ -242,15 +242,13 @@ static int i2s_calc_clk(struct i2s_priv *i2s)
 	case 8000:
 	case 16000:
 	case 32000:
-		clk_parent = devm_clk_get(i2s->dev, "clk_twpll_128m");
+		clk_parent = clk_get(NULL, "clk_twpll_128m");
 		break;
 	case 9600:
 	case 12000:
 	case 24000:
 	case 48000:
-	case 96000:
-	case 192000:
-		clk_parent = devm_clk_get(i2s->dev, "clk_twpll_153m6");
+		clk_parent = clk_get(NULL, "clk_twpll_153m6");
 		break;
 	default:
 		pr_err("ERR:I2S Can't Support %d Clock\n", config->fs);
@@ -295,15 +293,13 @@ static int i2s_calc_clk_m_n(struct i2s_priv *i2s, uint div_mode,
 	case 8000:
 	case 16000:
 	case 32000:
-		clk_parent = devm_clk_get(i2s->dev, "clk_twpll_128m");
+		clk_parent = clk_get(NULL, "clk_twpll_128m");
 		break;
 	case 9600:
 	case 12000:
 	case 24000:
 	case 48000:
-	case 96000:
-	case 192000:
-		clk_parent = devm_clk_get(i2s->dev, "clk_twpll_153m6");
+		clk_parent = clk_get(NULL, "clk_twpll_153m6");
 		break;
 	default:
 		pr_err("ERR:%s Can't Support %d Clock\n", __func__, config->fs);
@@ -357,7 +353,7 @@ static int master_fraction_clock(struct i2s_priv *i2s, uint div_mode)
 	unsigned long reg_clkml = I2S_REG(i2s, IIS_CLKML);
 	unsigned long reg_clkd = I2S_REG(i2s, IIS_CLKD);
 
-	int clk_m = 0, clk_n = 0, clkd;
+	int clk_m, clk_n, clkd;
 	int val_clkmh;
 	int val_clkml;
 	int val_clknh;
@@ -398,21 +394,6 @@ static int master_fraction_clock(struct i2s_priv *i2s, uint div_mode)
 	return 0;
 }
 
-static void i2s_clr_clk_m_n(struct i2s_priv *i2s)
-{
-	unsigned long reg_ctrl5 = I2S_REG(i2s, IIS_CTRL5);
-	unsigned long reg_clknh = I2S_REG(i2s, IIS_CLKNH);
-	unsigned long reg_clknl = I2S_REG(i2s, IIS_CLKNL);
-	unsigned long reg_clkmh = I2S_REG(i2s, IIS_CLKMH);
-	unsigned long reg_clkml = I2S_REG(i2s, IIS_CLKML);
-
-	i2s_reg_update(reg_ctrl5, 0x00, 0xffff);
-	i2s_reg_update(reg_clknh, 0x00, 0xffff);
-	i2s_reg_update(reg_clknl, 0x00, 0xffff);
-	i2s_reg_update(reg_clkmh, 0x00, 0xffff);
-	i2s_reg_update(reg_clkml, 0x00, 0xffff);
-}
-
 static int i2s_set_clkd(struct i2s_priv *i2s)
 {
 	int shift = 0;
@@ -421,7 +402,6 @@ static int i2s_set_clkd(struct i2s_priv *i2s)
 	unsigned long reg = I2S_REG(i2s, IIS_CLKD);
 
 	sp_asoc_pr_dbg("%s\n", __func__);
-	i2s_clr_clk_m_n(i2s);
 	val = i2s_calc_clk(i2s);
 	if (val < 0)
 		return val;
@@ -671,6 +651,7 @@ static int i2s_config_rate(struct i2s_priv *i2s)
 
 static int i2s_config_apply(struct i2s_priv *i2s)
 {
+	int ret = 0;
 	struct i2s_config *config = &i2s->config;
 
 	sp_asoc_pr_dbg("%s\n", __func__);
@@ -700,7 +681,9 @@ static int i2s_config_apply(struct i2s_priv *i2s)
 		i2s_set_pcm_cycle(i2s);
 	}
 
-	return 0;
+	ret = i2s_config_rate(i2s);
+
+	return ret;
 }
 
 static void i2s_dma_ctrl(struct i2s_priv *i2s, int enable)
@@ -733,14 +716,14 @@ static int i2s_close(struct i2s_priv *i2s)
 
 static int i2s_open(struct i2s_priv *i2s)
 {
-	int ret;
+	int ret = 0;
 
 	sp_asoc_pr_dbg("%s %d\n", __func__, atomic_read(&i2s->open_cnt));
 
 	atomic_inc(&i2s->open_cnt);
 	if (atomic_read(&i2s->open_cnt) == 1) {
-		i2s->i2s_clk = devm_clk_get(i2s->dev,
-			arch_audio_i2s_clk_name(i2s->config.hw_port));
+		i2s->i2s_clk =
+		    clk_get(NULL, arch_audio_i2s_clk_name(i2s->config.hw_port));
 		if (IS_ERR(i2s->i2s_clk)) {
 			ret = PTR_ERR(i2s->i2s_clk);
 			pr_err("ERR:I2S Get clk Error %d!\n", ret);
@@ -750,14 +733,10 @@ static int i2s_open(struct i2s_priv *i2s)
 		i2s_soft_reset(i2s);
 		i2s_dma_ctrl(i2s, 0);
 		ret = i2s_config_apply(i2s);
-		if (ret < 0) {
-			pr_err("ERR:I2S-config-apply Error!\n");
-			return ret;
-		}
 		clk_prepare_enable(i2s->i2s_clk);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int i2s_startup(struct snd_pcm_substream *substream,
@@ -808,50 +787,30 @@ static int i2s_hw_params(struct snd_pcm_substream *substream,
 		dma_data->used_dma_channel_name[0] = use_dma_name[2 * port + 1];
 		dma_data->desc.fragmens_len = i2s->config.rx_watermark;
 	}
-
-	switch (params_format(params)) {
-	case SNDRV_PCM_FORMAT_S16_LE:
-		dma_data->desc.datawidth = i2s_get_dma_data_width(i2s);
-		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-			dma_data->desc.src_step = i2s_get_dma_step(i2s);
-			dma_data->desc.des_step = 0;
-		} else {
-			dma_data->desc.src_step = 0;
-			dma_data->desc.des_step = i2s_get_dma_step(i2s);
-		}
-		break;
-	case SNDRV_PCM_FORMAT_S24_LE:
-	case SNDRV_PCM_FORMAT_S32_LE:
-		dma_data->desc.datawidth = DMA_SLAVE_BUSWIDTH_4_BYTES;
-		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-			dma_data->desc.src_step = 4;
-			dma_data->desc.des_step = 0;
-		} else {
-			dma_data->desc.src_step = 0;
-			dma_data->desc.des_step = 4;
-		}
-		break;
-	default:
-		pr_err("ERR: %s I2S not supports format %d now!\n",
-			__func__, params_format(params));
-		return -ENOTSUPP;
-	}
-
-	pr_debug("format %d, desc.datawidth %d, desc.src_step %d, desc.des_step %d\n",
-		 params_format(params), dma_data->desc.datawidth,
-		 dma_data->desc.src_step, dma_data->desc.des_step);
+	dma_data->desc.datawidth = i2s_get_dma_data_width(i2s);
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		dma_data->desc.src_step = i2s_get_dma_step(i2s);
+	else
+		dma_data->desc.des_step = i2s_get_dma_step(i2s);
 
 	dma_data->dev_paddr[0] =
 	    I2S_PHY_REG(i2s, IIS_TXD) + i2s_get_data_position(i2s);
 
 	snd_soc_dai_set_dma_data(dai, substream, dma_data);
 
-	if (i2s->config.force_fs == 0)
-		i2s->config.fs = params_rate(params);
+	i2s->config.fs = params_rate(params);
 	ret = i2s_config_rate(i2s);
 	if (ret)
 		return ret;
 
+	switch (params_format(params)) {
+	case SNDRV_PCM_FORMAT_S16_LE:
+		break;
+	default:
+		ret = -ENOTSUPP;
+		pr_err("ERR:I2S Only Supports format S16_LE now!\n");
+		break;
+	}
 
 	if (params_channels(params) > 2) {
 		ret = -ENOTSUPP;
@@ -904,9 +863,6 @@ static void i2s_config_setting(int index, int value, struct i2s_config *config)
 	case FS:
 		if (value >= SAMPLATE_MIN && value <= SAMPLATE_MAX)
 			config->fs = value;
-		break;
-	case FORCE_FS:
-		config->force_fs = value;
 		break;
 	case HW_PROT:
 		if (value >= 0 && value <= 3)
@@ -989,8 +945,6 @@ static int i2s_config_getting(int index, struct i2s_config *config)
 	switch (index) {
 	case FS:
 		return config->fs;
-	case FORCE_FS:
-		return config->force_fs;
 	case HW_PROT:
 		return config->hw_port;
 	case SLAVE_TIMEOUT:
@@ -1434,16 +1388,14 @@ static int i2s_drv_probe(struct platform_device *pdev)
 	i2s->i2s_dai_driver[0].playback.channels_min = 1;
 	i2s->i2s_dai_driver[0].playback.channels_max = 2;
 	i2s->i2s_dai_driver[0].playback.rates = SNDRV_PCM_RATE_CONTINUOUS;
-	i2s->i2s_dai_driver[0].playback.rate_max = 192000;
-	i2s->i2s_dai_driver[0].playback.formats = SNDRV_PCM_FMTBIT_S16_LE |
-		SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE;
+	i2s->i2s_dai_driver[0].playback.rate_max = 96000;
+	i2s->i2s_dai_driver[0].playback.formats = SNDRV_PCM_FMTBIT_S16_LE;
 
 	i2s->i2s_dai_driver[0].capture.channels_min = 1;
 	i2s->i2s_dai_driver[0].capture.channels_max = 2;
 	i2s->i2s_dai_driver[0].capture.rates = SNDRV_PCM_RATE_CONTINUOUS;
 	i2s->i2s_dai_driver[0].capture.rate_max = 96000;
-	i2s->i2s_dai_driver[0].capture.formats = SNDRV_PCM_FMTBIT_S16_LE |
-		SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE;
+	i2s->i2s_dai_driver[0].capture.formats = SNDRV_PCM_FMTBIT_S16_LE;
 	i2s->i2s_dai_driver[0].ops = &sprd_i2s_dai_ops;
 
 	sp_asoc_pr_dbg("membase = %p memphys = %p\n", i2s->membase,

@@ -152,7 +152,7 @@ static void vbc_dma_chn_en(u32 id, u32 en, u32 chan)
 	unsigned int reg = 0;
 	unsigned int val = 0;
 
-	if (!AUDIO_CHAN_CHECK(chan)) {
+	if (AUDIO_CHAN_CHECK(chan) == 0) {
 		pr_err("%s invalid chan %u\n", __func__, chan);
 
 		return;
@@ -969,6 +969,11 @@ static struct snd_soc_dai_driver vbc_dai[] = {
 
 static int vbc_set_phys_addr(int vbc_switch)
 {
+	/* ninglei for sharkl2 ap can config ap dma and aon dma
+	 * but can't config wtlcp dma (tgdsp dma, ldsp dam).And
+	 * vbc won't request pubcp dma, so audio would not config
+	 * pubcp dma.
+	 */
 	/* do nothing */
 	return 0;
 }
