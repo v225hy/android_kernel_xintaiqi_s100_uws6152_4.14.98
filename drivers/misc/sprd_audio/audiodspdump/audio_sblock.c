@@ -40,6 +40,11 @@
 #include "audio-sipc.h"
 #include "audio-smsg.h"
 
+/* audio sblock data-path RT priority: kept strictly above the WCN SDIO RX
+ * priority (SDIO_RX_TASK_PRIO = 90) so audio playback is never starved by
+ * WCN RX/FIFO traffic under foreground load (fixes music glitch). */
+#define AUDIO_SBLOCK_TASK_PRIO		91
+
 #define SBLOCKSZ_ALIGN(blksz, size) (((blksz)+((size)-1))&(~((size)-1)))
 
 /* flag for CMD/DONE msg type */
@@ -267,9 +272,9 @@ static int audio_sblock_thread(void *data)
 	struct aud_smsg mrecv;
 	int rval = 0;
 	int ret = 0;
-	struct sched_param param = {.sched_priority = 90};
+	struct sched_param param = {.sched_priority = AUDIO_SBLOCK_TASK_PRIO};
 
-	/*set the thread as a real time thread, and its priority is 90*/
+	/*set the thread as a real time thread, and its priority is AUDIO_SBLOCK_TASK_PRIO*/
 	sched_setscheduler(current, SCHED_RR, &param);
 
 	pr_info("%s: send smem_addr  to dsp,  sblock->channel=%d\n",
