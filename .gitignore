@@ -131,3 +131,12 @@ kernel/configs/android-*.cfg
 /boot.img
 /__orig_boot.img
 /modules_out/
+
+# --- local build artifacts (archive 2026-09-13) ---
+arch/arm64/boot/Image.bak_*
+arch/arm64/boot/Image.gz.bak_*
+arch/arm64/boot/Image.pre_*
+*.bak_*
+*.orig_*
+build*.log
+/out/
