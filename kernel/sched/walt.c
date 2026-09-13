@@ -39,7 +39,7 @@ static __read_mostly unsigned int walt_window_stats_policy =
 	WINDOW_STATS_MAX;
 static __read_mostly unsigned int walt_account_wait_time;
 static __read_mostly unsigned int walt_freq_account_wait_time = 0;
-static __read_mostly unsigned int walt_io_is_busy = 0;
+unsigned int sysctl_sched_walt_io_is_busy = 0;
 
 unsigned int sysctl_sched_walt_init_task_load_pct = 15;
 
@@ -245,7 +245,7 @@ static u64 scale_exec_time(u64 delta, struct rq *rq)
 
 static int cpu_is_waiting_on_io(struct rq *rq)
 {
-	if (!walt_io_is_busy)
+	if (!sysctl_sched_walt_io_is_busy)
 		return 0;
 
 	return atomic_read(&rq->nr_iowait);

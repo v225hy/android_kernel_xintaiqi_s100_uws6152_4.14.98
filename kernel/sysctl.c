@@ -359,6 +359,13 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 	{
+		.procname	= "sched_walt_io_is_busy",
+		.data		= &sysctl_sched_walt_io_is_busy,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
 		.procname	= "sched_walt_cpu_high_irqload",
 		.data		= &sysctl_sched_walt_cpu_high_irqload,
 		.maxlen		= sizeof(unsigned int),
